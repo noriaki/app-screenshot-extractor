@@ -96,28 +96,28 @@
   - 生成統計情報（画像数、マッチング成功数、失敗数）を表示する`display_statistics()`を実装する
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [ ] 4. CLI統合とオーケストレーション
+- [x] 4. CLI統合とオーケストレーション
   - main関数にargparseオプションを追加する
   - 既存のスクリーンショット抽出処理と新機能を統合する
   - 条件分岐により音声処理とMarkdown生成を制御する
   - 後方互換性を維持する
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
 
-- [ ] 4.1 CLIオプションの追加
+- [x] 4.1 CLIオプションの追加
   - `--audio`オプションで音声ファイルパスを受け付ける
   - `--markdown`オプションでMarkdown出力を有効化する
   - `--model-size`オプションでWhisperモデルサイズを選択可能にする（デフォルト: base）
   - CLIヘルプに新しいオプションの説明を追加する
   - _Requirements: 6.1, 6.2, 6.4_
 
-- [ ] 4.2 統合処理フローの実装
+- [x] 4.2 統合処理フローの実装
   - 既存のScreenshotExtractor実行後に音声処理を実行する
   - `--audio`オプション指定時にAudioProcessorを初期化して音声認識を実行する
   - `--markdown`オプション指定時にTimestampSynchronizerとMarkdownGeneratorを実行する
   - 音声なしでもMarkdown生成を可能にする（--markdownのみ指定）
   - _Requirements: 6.3, 6.5_
 
-- [ ] 4.3 後方互換性の確保
+- [x] 4.3 後方互換性の確保
   - `--audio`および`--markdown`オプションなしの場合、既存の動作を完全に維持する
   - 既存のmetadata.jsonフォーマットを変更しない
   - 既存のオプション（-i, -o, -c, -t, --interval）の動作に影響を与えない

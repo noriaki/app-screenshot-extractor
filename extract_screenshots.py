@@ -1125,20 +1125,17 @@ def main():
     print("=" * 60)
     print()
 
-    # 抽出実行
-    extractor = ScreenshotExtractor(
+    # 統合処理フローを実行（Task 4.2, 4.3）
+    run_integration_flow(
         video_path=args.input,
         output_dir=args.output,
-        transition_threshold=args.threshold,
-        min_time_interval=args.interval,
-        target_count=args.count
+        audio_path=args.audio,
+        markdown=args.markdown,
+        model_size=args.model_size,
+        threshold=args.threshold,
+        interval=args.interval,
+        count=args.count
     )
-
-    metadata = extractor.extract_screenshots()
-
-    if len(metadata) == 0:
-        print("\nError: No screenshots extracted")
-        sys.exit(1)
 
     print("\nSuccess!")
     sys.exit(0)
