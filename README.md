@@ -17,6 +17,8 @@
 - **時間的重複排除**: 類似した画面を排除し、バラエティのある画像セットを生成
 - **4K動画対応**: 元の解像度を維持しながら高速処理
 - **Apple Silicon最適化**: M1/M2/M3/M4チップで効率的に動作
+- **音声認識統合**: OpenAI Whisperで音声から自動的にテキストを抽出（日本語対応）
+- **Markdown記事生成**: スクリーンショットと音声解説を統合した記事を自動生成
 
 ## 必要な環境
 
@@ -99,8 +101,13 @@ python extract_screenshots.py --input app_demo.mp4
 | `--count` | `-c` | `10` | 抽出する画像の枚数 |
 | `--threshold` | `-t` | `25` | 画面遷移検出の閾値（大きいほど鈍感） |
 | `--interval` | | `15` | スクリーンショット間の最小時間間隔（秒） |
+| `--audio` | | なし | 音声ファイルパス（音声認識を有効化） |
+| `--markdown` | | なし | Markdown記事を生成する |
+| `--model-size` | | `base` | Whisperモデルサイズ（tiny, base, small, medium, large, turbo） |
 
 ### 使用例
+
+#### 基本的なスクリーンショット抽出
 
 ```bash
 # 15枚抽出（より多くの画像が必要な場合）
@@ -116,6 +123,78 @@ python extract_screenshots.py -i sample_app.mp4 -o ~/Documents/screenshots --int
 python extract_screenshots.py -i app_demo.mp4 -o ./results -c 12 -t 22 --interval 12
 ```
 
+#### 音声・Markdown統合機能（v2.0.0+）
+
+```bash
+# パターン1: 音声認識とMarkdown記事生成（音声あり）
+python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --markdown
+
+# パターン2: Markdown記事生成のみ（音声なし、画像のみ）
+python extract_screenshots.py -i app_demo.mp4 --markdown
+
+# パターン3: 音声認識のみ（Markdown生成なし）
+python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3
+
+# Whisperモデルサイズを指定（高精度だが処理時間が増加）
+python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --markdown --model-size small
+
+# すべてのオプションを組み合わせ
+python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --markdown -c 15 -o ./article --model-size base
+```
+
+## テストの実行
+
+プロジェクトには包括的なテストスイートが含まれています。
+
+### すべてのテストを実行
+
+```bash
+# 仮想環境を有効化
+source .venv/bin/activate
+
+# すべてのテストを実行
+python -m unittest discover -s . -p "test_*.py" -v
+```
+
+### テストスイート
+
+| テストファイル | 説明 |
+|--------------|------|
+| `test_audio_processor.py` | AudioProcessorクラスの単体テスト（音声ファイル検証、音声認識、保存機能） |
+| `test_timestamp_synchronizer.py` | TimestampSynchronizerクラスの単体テスト（最近傍検索、同期処理） |
+| `test_markdown_generator.py` | MarkdownGeneratorクラスの単体テスト（Markdown生成、フォーマット、保存） |
+| `test_cli_integration.py` | CLI統合テスト（オプション解析、統合フロー、後方互換性） |
+| `test_e2e_integration.py` | エンドツーエンドテスト（音声あり/なし、エラーケース） |
+| `test_error_handling.py` | エラーハンドリングテスト（ファイル不在、フォーマット不正、ffmpeg不在） |
+| `test_performance.py` | パフォーマンステスト（処理時間、メモリ使用量、スケーラビリティ） |
+
+### 特定のテストファイルを実行
+
+```bash
+# AudioProcessorのテストのみ実行
+python -m unittest test_audio_processor -v
+
+# TimestampSynchronizerのテストのみ実行
+python -m unittest test_timestamp_synchronizer -v
+
+# パフォーマンステストのみ実行
+python -m unittest test_performance -v
+```
+
+### テスト実行例
+
+```bash
+$ python -m unittest discover -s . -p "test_*.py" -v
+test_format_description_with_none (test_markdown_generator.TestMarkdownGenerator) ... ok
+test_format_description_with_text (test_markdown_generator.TestMarkdownGenerator) ... ok
+test_format_section_title_fallback (test_markdown_generator.TestMarkdownGenerator) ... ok
+...
+----------------------------------------------------------------------
+Ran 118 tests in 4.569s
+
+OK (skipped=1)
+```
+
 ## 出力形式
 
 ### ディレクトリ構造
@@ -127,7 +206,9 @@ output/
 │   ├── 02_00-32_score85.png
 │   ├── 03_01-05_score82.png
 │   └── ...
-└── metadata.json
+├── metadata.json
+├── transcript.json       # 音声認識結果（--audioオプション使用時）
+└── article.md           # 生成されたMarkdown記事（--markdownオプション使用時）
 ```
 
 ### ファイル命名規則
@@ -159,6 +240,69 @@ output/
   }
 ]
 ```
+
+### 音声認識結果（transcript.json）
+
+`--audio`オプション使用時に生成されます。
+
+```json
+{
+  "language": "ja",
+  "duration": 125.3,
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 3.5,
+      "text": "アプリを起動すると、ログイン画面が表示されます。"
+    },
+    {
+      "start": 3.5,
+      "end": 7.8,
+      "text": "ユーザー名とパスワードを入力してログインボタンをタップします。"
+    }
+  ]
+}
+```
+
+**フィールド説明:**
+- `language`: 認識された言語コード（ja: 日本語）
+- `duration`: 音声ファイル全体の長さ（秒）
+- `segments`: 音声セグメントのリスト
+  - `start`: セグメント開始時刻（秒）
+  - `end`: セグメント終了時刻（秒）
+  - `text`: 認識されたテキスト内容
+
+### Markdown記事（article.md）
+
+`--markdown`オプション使用時に生成されます。
+
+```markdown
+# アプリ紹介
+
+## 00:15 - ログイン画面
+
+![Screenshot](screenshots/01_00-15_score87.png)
+
+アプリを起動すると、ログイン画面が表示されます。
+
+## 00:32 - ログイン処理
+
+![Screenshot](screenshots/02_00-32_score92.png)
+
+ユーザー名とパスワードを入力してログインボタンをタップします。
+
+## 00:48 - (説明文なし)
+
+![Screenshot](screenshots/03_00-48_score78.png)
+
+(説明文なし)
+```
+
+**構造:**
+- H1見出し: 記事タイトル
+- H2見出し: タイムスタンプ（MM:SS形式）+ 音声テキストから抽出した短いタイトル
+- 画像リンク: `![Screenshot](相対パス)`形式
+- 説明文: 音声テキスト、または音声がない場合は"(説明文なし)"
 
 ## 処理アルゴリズム
 
@@ -272,14 +416,131 @@ python extract_screenshots.py -i ./videos/app_demo.mp4
 - 動画の解像度を下げる（1080pなど）
 - `--threshold` を大きくして処理フレーム数を減らす
 
+### 音声認識が失敗する（v2.0.0+）
+
+**エラー: `RuntimeError: ffmpeg not found`**
+
+ffmpegがインストールされていない可能性があります。
+
+```bash
+# macOSの場合
+brew install ffmpeg
+
+# インストール確認
+ffmpeg -version
+```
+
+**音声ファイルが認識されない**
+
+サポートされている音声フォーマットを確認してください:
+- 対応形式: mp3, mp4, mpeg, mpga, m4a, wav, webm
+
+```bash
+# ファイル形式を確認
+file demo_audio.mp3
+```
+
+**日本語の認識精度が低い**
+
+より高精度なモデルを使用してください:
+
+```bash
+# smallモデル（高精度）
+python extract_screenshots.py -i video.mp4 --audio audio.mp3 --markdown --model-size small
+
+# mediumモデル（さらに高精度）
+python extract_screenshots.py -i video.mp4 --audio audio.mp3 --markdown --model-size medium
+```
+
+### 動画と音声の長さが合わない（v2.0.0+）
+
+**警告: `Duration mismatch`**
+
+動画と音声ファイルの長さが5秒以上異なる場合、警告が表示されますが処理は継続されます。
+
+対処法:
+1. 録音開始/停止のタイミングを揃えて再撮影
+2. 動画編集ソフトで音声と動画の開始時刻を合わせる
+3. 警告を無視して処理を継続（精度は低下する可能性があります）
+
+### Markdown記事に説明文が含まれない
+
+**症状: `(説明文なし)`が多数表示される**
+
+原因:
+- スクリーンショットのタイムスタンプと音声セグメントが5秒以上離れている
+- 音声ファイルが短すぎる、または無音区間が多い
+
+対処法:
+1. 音声解説を密に録音する（画面遷移ごとに解説を入れる）
+2. スクリーンショットの枚数を減らす（`-c`オプションで調整）
+3. 閾値を調整して画面遷移の検出感度を変更（`-t`オプション）
+
+## 音声・Markdown統合機能の詳細（v2.0.0+）
+
+### 概要
+
+動画ファイルと音声ファイルを統合し、スクリーンショットと音声解説を組み合わせたMarkdown記事を自動生成します。
+
+### 処理フロー
+
+1. **スクリーンショット抽出**: 既存の画面遷移検出アルゴリズムで最適な画像を選択
+2. **音声認識**: OpenAI Whisperで音声からテキストを抽出（タイムスタンプ付き）
+3. **タイムスタンプ同期**: スクリーンショットと音声セグメントを時間軸で自動対応付け
+4. **Markdown生成**: 構造化された記事を自動生成（画像 + 説明文）
+
+### 音声認識の仕組み
+
+- **エンジン**: OpenAI Whisper（ローカル実行、プライバシー保護）
+- **対応言語**: 日本語、英語（他の言語も対応可能）
+- **モデルサイズ**:
+  - `tiny`: 最速（約40MB、精度は低め）
+  - `base`: バランス型（約140MB、デフォルト）
+  - `small`: 高精度（約460MB）
+  - `medium`: さらに高精度（約1.5GB）
+  - `large`: 最高精度（約2.9GB、処理時間が長い）
+  - `turbo`: 高速・高精度（約1.5GB、最新モデル）
+
+### タイムスタンプ同期
+
+- **アルゴリズム**: 最近傍マッチング（Nearest Neighbor Matching）
+- **許容範囲**: 5秒以内で最も近い音声セグメントを選択
+- **対応付け**: 各スクリーンショットに最大1つの音声セグメントを割り当て
+- **未対応時**: 音声がない場合は"(説明文なし)"を表示
+
+### ユースケース
+
+1. **アプリ紹介記事の作成**
+   - デモ動画と音声解説から即座に公開可能な記事を生成
+   - 手動でのスクリーンショット配置とテキスト入力を大幅に削減
+
+2. **ドキュメント作成の効率化**
+   - 操作手順動画から構造化されたマニュアルを自動生成
+   - タイムスタンプ付きで動画参照が容易
+
+3. **プレゼンテーション資料作成**
+   - アプリデモ動画から説得力のある資料を自動生成
+   - Markdownから他の形式（HTML、PDF）への変換も可能
+
+### 注意事項
+
+- **初回実行時**: Whisperモデル（約140MB）が自動ダウンロードされます
+- **処理時間**: 音声認識は音声長の約1/7の時間（baseモデル使用時）
+- **メモリ使用量**: EasyOCR + Whisper同時ロード時で約3GB
+- **動画・音声の同期**: 録音開始/停止のタイミングが5秒以上ずれている場合、警告が表示されます
+
 ## 技術スタック
 
+### コア機能
 - **opencv-python**: 動画処理とフレーム抽出
 - **Pillow**: 画像処理
 - **imagehash**: Perceptual Hashing（pHash）
 - **EasyOCR**: OCR（日本語・英語対応）
 - **numpy**: 数値計算
 - **tqdm**: 進捗表示
+
+### 音声・Markdown統合機能（v2.0.0+）
+- **openai-whisper**: 音声認識エンジン（日本語対応）
 
 ## ライセンス
 
@@ -296,6 +557,16 @@ MIT License
 Claude Code assisted implementation
 
 ## 更新履歴
+
+### v2.0.0 (2025-10-14)
+- **音声認識機能の追加**: OpenAI Whisperによる音声テキスト変換
+- **Markdown記事生成機能の追加**: スクリーンショットと音声解説を統合した記事を自動生成
+- **タイムスタンプ同期**: 最近傍マッチングアルゴリズムで画像と音声を自動対応付け
+- **新規CLIオプション**: `--audio`, `--markdown`, `--model-size`
+- **新規出力ファイル**: `transcript.json`（音声認識結果）, `article.md`（Markdown記事）
+- **後方互換性**: 既存のコマンドライン引数の動作を完全に維持
+
+詳細は[CHANGELOG.md](./CHANGELOG.md)を参照してください。
 
 ### v1.0.0 (2025-10-13)
 - 初回リリース

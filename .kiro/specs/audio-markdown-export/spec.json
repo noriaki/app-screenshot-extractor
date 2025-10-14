@@ -1,9 +1,9 @@
 {
   "feature_name": "audio-markdown-export",
   "created_at": "2025-10-14T00:00:00Z",
-  "updated_at": "2025-10-14T13:00:00Z",
+  "updated_at": "2025-10-14T15:30:00Z",
   "language": "ja",
-  "phase": "tasks-generated",
+  "phase": "ready-for-implementation",
   "approvals": {
     "requirements": {
       "generated": true,
@@ -15,8 +15,8 @@
     },
     "tasks": {
       "generated": true,
-      "approved": false
+      "approved": true
     }
   },
-  "ready_for_implementation": false
+  "ready_for_implementation": true
 }

@@ -11,6 +11,7 @@ env/
 
 # Output
 output/
+source/
 *.mp4
 *.mov
 *.avi
