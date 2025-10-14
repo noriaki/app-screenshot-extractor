@@ -611,7 +611,17 @@ class AudioProcessor:
             print(f"  Transcribed {len(segments)} segments\n")
             return segments
 
+        except RuntimeError as e:
+            # ffmpegエラーなどの RuntimeError は詳細なインストール案内を表示して再raise
+            if "ffmpeg" in str(e).lower():
+                print("\nError: ffmpeg is not installed or not found in PATH.")
+                print("Please install ffmpeg:")
+                print("  macOS: brew install ffmpeg")
+                print("  Ubuntu/Debian: sudo apt install ffmpeg\n")
+            raise  # RuntimeErrorは再raiseして処理を中断
+
         except Exception as e:
+            # 一般的なExceptionは警告を表示して空リストを返す（処理継続）
             print(f"Warning: Audio transcription failed: {e}")
             print("Continuing without audio transcription.")
             return []  # 空リストを返して処理継続
