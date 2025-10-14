@@ -34,6 +34,30 @@
 - Docstrings は日本語で明確な説明を記載
 - モジュールレベルの定数は UPPER_CASE (例: `IMPORTANT_UI_KEYWORDS`)
 
+### Git Commit Messages
+- **Language**: English (concise and clear)
+- **Format**: Imperative mood in subject line (e.g., "Add feature" not "Added feature")
+- **Structure**:
+  - Subject: Brief summary (50 chars max)
+  - Body: Detailed explanation with Changes/Benefits sections (optional)
+  - Footer: Claude Code attribution
+- **Example**:
+  ```
+  Improve audio duration handling and add test documentation
+
+  Changes:
+  - Refactor: Get audio duration from Whisper result instead of ffprobe
+  - Add: Comprehensive test execution section in README.md
+
+  Benefits:
+  - Simpler implementation (no subprocess dependency)
+  - Better documentation for running tests
+
+  🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+  Co-Authored-By: Claude <noreply@anthropic.com>
+  ```
+
 ### Performance
 - 高速化のため720pにダウンサンプルして処理（元解像度は保持）
 - フレームスキップ（0.5秒ごと）で処理速度向上
@@ -53,7 +77,15 @@
 # Activate: source .venv/bin/activate
 # Install: pip install -r requirements.txt
 # Run: python extract_screenshots.py -i video.mp4
+# Test (all): python -m unittest discover -s . -p "test_*.py" -v
+# Test (specific): python -m unittest test_audio_processor -v
 ```
+
+**Test Execution Guidelines for AI:**
+- Always run full test suite (`python -m unittest discover -s . -p "test_*.py" -v`) after implementation changes
+- Run specific test file when modifying a particular class (e.g., `python -m unittest test_audio_processor -v` for AudioProcessor changes)
+- Verify all tests pass before creating git commits
+- Test files follow naming pattern: `test_{class_name}.py` or `test_{feature}.py`
 
 ## Key Technical Decisions
 
