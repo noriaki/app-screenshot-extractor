@@ -784,8 +784,200 @@ class TimestampSynchronizer:
         return abs(time1 - time2)
 
 
-def main():
-    """メイン関数"""
+class MarkdownGenerator:
+    """Markdown記事生成クラス"""
+
+    def __init__(self, output_dir: str, title: str = "アプリ紹介"):
+        """
+        Args:
+            output_dir: 出力ディレクトリ
+            title: 記事タイトル（H1見出し）
+        """
+        self.output_dir = Path(output_dir)
+        self.title = title
+
+    def generate(self, synchronized_data: List[Dict]) -> str:
+        """
+        同期済みデータからMarkdown文字列を生成
+
+        Args:
+            synchronized_data: TimestampSynchronizer.synchronize()の戻り値
+
+        Returns:
+            Markdown形式の文字列
+
+        Preconditions:
+            - synchronized_dataが有効なリスト
+            - 各要素にscreenshotキーが存在
+
+        Postconditions:
+            - 標準Markdown形式（画像: ![alt](path), 見出し: ##）
+            - 画像パスは相対パス
+            - 音声テキストがない場合はプレースホルダー
+        """
+        lines = []
+
+        # H1見出しで記事タイトルを配置
+        lines.append(f"# {self.title}\n\n")
+
+        # 各スクリーンショットをH2見出しで区切る
+        for item in synchronized_data:
+            screenshot = item['screenshot']
+            transcript = item.get('transcript')
+
+            # H2見出し: タイムスタンプとタイトル
+            section_title = self.format_section_title(screenshot, transcript)
+            lines.append(f"{section_title}\n\n")
+
+            # 画像リンク（相対パス）
+            image_path = self.get_relative_image_path(screenshot)
+            lines.append(f"![Screenshot]({image_path})\n\n")
+
+            # 音声テキストを画像の下に配置
+            description = self.format_description(transcript)
+            lines.append(f"{description}\n\n")
+
+        return "".join(lines)
+
+    def format_section_title(self, screenshot: Dict, transcript: Optional[Dict]) -> str:
+        """
+        セクション見出しを生成
+
+        Args:
+            screenshot: スクリーンショット情報
+            transcript: 音声セグメント情報（None可）
+
+        Returns:
+            H2見出し文字列（例: "## 00:15 - 起動画面"）
+
+        Preconditions:
+            - screenshot['timestamp']が存在
+
+        Postconditions:
+            - タイムスタンプはMM:SS形式
+            - 音声テキストから適切な短いタイトルを抽出（最大20文字）
+        """
+        timestamp_str = self.format_timestamp(screenshot['timestamp'])
+
+        if transcript is None or 'text' not in transcript:
+            return f"## {timestamp_str} - (説明文なし)"
+
+        # 音声テキストから短いタイトルを抽出（最大20文字）
+        text = transcript['text']
+        if len(text) > 20:
+            title = text[:20]
+        else:
+            title = text
+
+        return f"## {timestamp_str} - {title}"
+
+    def format_timestamp(self, seconds: float) -> str:
+        """
+        秒数をMM:SS形式に変換
+
+        Args:
+            seconds: タイムスタンプ（秒）
+
+        Returns:
+            MM:SS形式の文字列
+        """
+        minutes = int(seconds // 60)
+        secs = int(seconds % 60)
+        return f"{minutes:02d}:{secs:02d}"
+
+    def get_relative_image_path(self, screenshot: Dict) -> str:
+        """
+        画像の相対パスを取得
+
+        Args:
+            screenshot: スクリーンショット情報
+
+        Returns:
+            相対パス（例: "screenshots/01_00-15_score87.png"）
+        """
+        filename = screenshot.get('filename', '')
+        return f"screenshots/{filename}"
+
+    def format_description(self, transcript: Optional[Dict]) -> str:
+        """
+        説明文を整形
+
+        Args:
+            transcript: 音声セグメント情報（None可）
+
+        Returns:
+            説明文テキスト、またはプレースホルダー
+
+        Postconditions:
+            - transcriptがNoneの場合: "(説明文なし)"
+            - transcriptがある場合: テキストをそのまま返す
+        """
+        if transcript is None:
+            return "(説明文なし)"
+
+        text = transcript.get('text', '')
+        return text
+
+    def save(self, markdown_content: str, filename: str = "article.md") -> Path:
+        """
+        Markdownファイルを保存
+
+        Args:
+            markdown_content: generate()の戻り値
+            filename: ファイル名
+
+        Returns:
+            保存したファイルのパス
+
+        Preconditions:
+            - output_dirが存在する（存在しない場合は作成）
+
+        Postconditions:
+            - ファイルがUTF-8エンコーディングで保存される
+            - 既存ファイルがある場合は上書き（警告表示）
+        """
+        # 出力ディレクトリが存在しない場合は作成
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # 保存パスを生成
+        output_path = self.output_dir / filename
+
+        # 既存ファイルがある場合は警告
+        if output_path.exists():
+            print(f"Warning: File already exists and will be overwritten: {output_path}")
+
+        # UTF-8エンコーディングでファイルを保存
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(markdown_content)
+
+        print(f"  Markdown saved to {output_path}")
+
+        return output_path
+
+    def display_statistics(self, synchronized_data: List[Dict]) -> None:
+        """
+        生成統計情報を表示
+
+        Args:
+            synchronized_data: TimestampSynchronizer.synchronize()の戻り値
+
+        Postconditions:
+            - 標準出力に統計情報が表示される
+            - 画像数、マッチング成功数、マッチング失敗数
+        """
+        total_images = len(synchronized_data)
+        matched_count = sum(1 for item in synchronized_data if item.get('matched', False))
+        unmatched_count = total_images - matched_count
+
+        print("\n=== Markdown Generation Statistics ===")
+        print(f"  Total images: {total_images}")
+        print(f"  Matched (with transcript): {matched_count}")
+        print(f"  Unmatched (no transcript): {unmatched_count}")
+        print("=" * 40)
+
+
+def create_argument_parser() -> argparse.ArgumentParser:
+    """引数パーサーを作成（テスト可能にするため分離）"""
     parser = argparse.ArgumentParser(
         description='App Screenshot Extractor - 動画から最適なスクリーンショットを自動抽出',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -794,9 +986,12 @@ def main():
   %(prog)s -i app_demo.mp4
   %(prog)s -i app_demo.mp4 -c 15 -t 20
   %(prog)s -i app_demo.mp4 -o ~/Documents/screenshots
+  %(prog)s -i app_demo.mp4 --audio demo.mp3 --markdown
+  %(prog)s -i app_demo.mp4 --audio demo.mp3 --markdown --model-size small
         """
     )
 
+    # 既存のオプション
     parser.add_argument('-i', '--input', required=True,
                        help='入力動画ファイルパス（必須）')
     parser.add_argument('-o', '--output', default='./output',
@@ -808,6 +1003,119 @@ def main():
     parser.add_argument('--interval', type=float, default=15.0,
                        help='最小時間間隔（秒）（デフォルト: 15）')
 
+    # 新規オプション（Task 4.1）
+    parser.add_argument('--audio', type=str, default=None,
+                       help='音声ファイルパス（任意）')
+    parser.add_argument('--markdown', action='store_true',
+                       help='Markdown記事を生成する（任意）')
+    parser.add_argument('--model-size', type=str, default='base',
+                       choices=['tiny', 'base', 'small', 'medium', 'large', 'turbo'],
+                       help='Whisperモデルサイズ（デフォルト: base）')
+
+    return parser
+
+
+def run_integration_flow(video_path: str,
+                         output_dir: str,
+                         audio_path: Optional[str],
+                         markdown: bool,
+                         model_size: str,
+                         threshold: int,
+                         interval: float,
+                         count: int) -> None:
+    """
+    統合処理フローを実行（Task 4.2）
+
+    Args:
+        video_path: 入力動画ファイルパス
+        output_dir: 出力ディレクトリ
+        audio_path: 音声ファイルパス（None可）
+        markdown: Markdown生成フラグ
+        model_size: Whisperモデルサイズ
+        threshold: 画面遷移検出の閾値
+        interval: 最小時間間隔
+        count: 抽出する画像の枚数
+    """
+    # 既存のスクリーンショット抽出処理
+    extractor = ScreenshotExtractor(
+        video_path=video_path,
+        output_dir=output_dir,
+        transition_threshold=threshold,
+        min_time_interval=interval,
+        target_count=count
+    )
+
+    metadata = extractor.extract_screenshots()
+
+    if len(metadata) == 0:
+        print("\nError: No screenshots extracted")
+        sys.exit(1)
+
+    # 新機能: 音声処理（Task 4.2）
+    transcript_data = None
+    if audio_path:
+        print("\n" + "=" * 60)
+        print("  Audio Processing")
+        print("=" * 60)
+        print()
+
+        audio_processor = AudioProcessor(
+            audio_path=audio_path,
+            output_dir=output_dir,
+            model_size=model_size
+        )
+
+        # 音声ファイル検証
+        if not audio_processor.validate_files():
+            sys.exit(1)
+
+        # 動画・音声長さの検証
+        video_duration = extractor.video_duration
+        if not audio_processor.validate_duration_match(video_duration):
+            sys.exit(1)
+
+        # 音声認識実行
+        transcript_data = audio_processor.transcribe_audio(language="ja")
+        audio_processor.save_transcript(transcript_data, language="ja")
+
+    # 新機能: Markdown生成（Task 4.2）
+    if markdown:
+        print("\n" + "=" * 60)
+        print("  Markdown Generation")
+        print("=" * 60)
+        print()
+
+        # 同期処理
+        if audio_path and transcript_data:
+            # 音声あり: タイムスタンプ同期
+            synchronizer = TimestampSynchronizer(tolerance=5.0)
+            synchronized = synchronizer.synchronize(metadata, transcript_data)
+        else:
+            # 音声なし: スクリーンショットのみ
+            synchronized = [
+                {
+                    "screenshot": m,
+                    "transcript": None,
+                    "matched": False
+                }
+                for m in metadata
+            ]
+
+        # Markdown生成
+        md_generator = MarkdownGenerator(
+            output_dir=output_dir,
+            title="アプリ紹介"
+        )
+        markdown_content = md_generator.generate(synchronized)
+        output_path = md_generator.save(markdown_content)
+        md_generator.display_statistics(synchronized)
+
+        print(f"\nMarkdown article saved to {output_path}")
+
+
+def main():
+    """メイン関数"""
+    parser = create_argument_parser()
     args = parser.parse_args()
 
     # バナー表示
