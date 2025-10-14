@@ -142,6 +142,59 @@ python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --markdown 
 python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --markdown -c 15 -o ./article --model-size base
 ```
 
+## テストの実行
+
+プロジェクトには包括的なテストスイートが含まれています。
+
+### すべてのテストを実行
+
+```bash
+# 仮想環境を有効化
+source .venv/bin/activate
+
+# すべてのテストを実行
+python -m unittest discover -s . -p "test_*.py" -v
+```
+
+### テストスイート
+
+| テストファイル | 説明 |
+|--------------|------|
+| `test_audio_processor.py` | AudioProcessorクラスの単体テスト（音声ファイル検証、音声認識、保存機能） |
+| `test_timestamp_synchronizer.py` | TimestampSynchronizerクラスの単体テスト（最近傍検索、同期処理） |
+| `test_markdown_generator.py` | MarkdownGeneratorクラスの単体テスト（Markdown生成、フォーマット、保存） |
+| `test_cli_integration.py` | CLI統合テスト（オプション解析、統合フロー、後方互換性） |
+| `test_e2e_integration.py` | エンドツーエンドテスト（音声あり/なし、エラーケース） |
+| `test_error_handling.py` | エラーハンドリングテスト（ファイル不在、フォーマット不正、ffmpeg不在） |
+| `test_performance.py` | パフォーマンステスト（処理時間、メモリ使用量、スケーラビリティ） |
+
+### 特定のテストファイルを実行
+
+```bash
+# AudioProcessorのテストのみ実行
+python -m unittest test_audio_processor -v
+
+# TimestampSynchronizerのテストのみ実行
+python -m unittest test_timestamp_synchronizer -v
+
+# パフォーマンステストのみ実行
+python -m unittest test_performance -v
+```
+
+### テスト実行例
+
+```bash
+$ python -m unittest discover -s . -p "test_*.py" -v
+test_format_description_with_none (test_markdown_generator.TestMarkdownGenerator) ... ok
+test_format_description_with_text (test_markdown_generator.TestMarkdownGenerator) ... ok
+test_format_section_title_fallback (test_markdown_generator.TestMarkdownGenerator) ... ok
+...
+----------------------------------------------------------------------
+Ran 118 tests in 4.569s
+
+OK (skipped=1)
+```
+
 ## 出力形式
 
 ### ディレクトリ構造

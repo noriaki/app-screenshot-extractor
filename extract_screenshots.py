@@ -460,6 +460,7 @@ class AudioProcessor:
         self.audio_path = audio_path
         self.output_dir = Path(output_dir)
         self.model_size = model_size
+        self.audio_duration = None  # 音声認識時に取得
 
     def validate_files(self) -> bool:
         """
@@ -495,48 +496,16 @@ class AudioProcessor:
 
         return True
 
-    def get_duration(self) -> float:
+    def get_duration(self) -> Optional[float]:
         """
         音声ファイルの長さを取得
 
+        transcribe_audio()実行後に利用可能になります。
+
         Returns:
-            音声ファイルの長さ（秒）
-
-        Raises:
-            RuntimeError: ffprobeが利用できない、または実行に失敗した場合
+            音声ファイルの長さ（秒）、または None（未実行の場合）
         """
-        import subprocess
-
-        try:
-            # ffprobeを使用して音声ファイルの長さを取得
-            result = subprocess.run(
-                [
-                    'ffprobe',
-                    '-v', 'error',
-                    '-show_entries', 'format=duration',
-                    '-of', 'default=noprint_wrappers=1:nokey=1',
-                    self.audio_path
-                ],
-                capture_output=True,
-                text=True,
-                check=False
-            )
-
-            if result.returncode != 0:
-                raise RuntimeError(f"ffprobe failed: {result.stderr}")
-
-            duration = float(result.stdout.strip())
-            return duration
-
-        except FileNotFoundError:
-            raise RuntimeError(
-                "ffprobe is not installed or not found in PATH. "
-                "Please install ffmpeg:\n"
-                "  macOS: brew install ffmpeg\n"
-                "  Ubuntu/Debian: sudo apt install ffmpeg"
-            )
-        except ValueError as e:
-            raise RuntimeError(f"Failed to parse duration from ffprobe output: {e}")
+        return self.audio_duration
 
     def validate_duration_match(self, video_duration: float) -> bool:
         """
@@ -551,11 +520,17 @@ class AudioProcessor:
         Preconditions:
             - audio_pathが存在し、有効な音声ファイルである
             - video_durationが正の値である
+            - transcribe_audio()が実行済みでaudio_durationが設定されている
 
         Postconditions:
             - 差異が5秒以上の場合、警告メッセージが標準出力に表示される
         """
         audio_duration = self.get_duration()
+
+        if audio_duration is None:
+            print("Warning: Audio duration not available yet (transcribe_audio not executed)")
+            return True  # 警告を表示して処理継続
+
         diff = abs(video_duration - audio_duration)
 
         if diff > 5.0:
@@ -593,6 +568,7 @@ class AudioProcessor:
 
         Postconditions:
             - セグメントはタイムスタンプ順にソート済み
+            - self.audio_durationが設定される
         """
         print("Step: Transcribing audio...")
         print(f"  Model: {self.model_size}")
@@ -608,7 +584,19 @@ class AudioProcessor:
             # セグメント情報を取得
             segments = result.get('segments', [])
 
+            # 音声の長さを取得（Whisperの結果から）
+            # 1. resultに'duration'キーがあればそれを使用
+            # 2. なければ最後のセグメントのendから取得
+            # 3. セグメントもなければ0.0
+            if 'duration' in result:
+                self.audio_duration = result['duration']
+            elif segments and len(segments) > 0:
+                self.audio_duration = segments[-1]['end']
+            else:
+                self.audio_duration = 0.0
+
             print(f"  Transcribed {len(segments)} segments\n")
+            print(f"  Audio duration: {self.audio_duration:.2f}s")
             return segments
 
         except RuntimeError as e:
@@ -639,6 +627,7 @@ class AudioProcessor:
 
         Preconditions:
             - output_dirが設定されている
+            - transcribe_audio()が実行済み
 
         Postconditions:
             - transcript.jsonファイルがUTF-8エンコーディングで保存される
@@ -1079,13 +1068,15 @@ def run_integration_flow(video_path: str,
         if not audio_processor.validate_files():
             sys.exit(1)
 
-        # 動画・音声長さの検証
+        # 音声認識実行
+        transcript_data = audio_processor.transcribe_audio(language="ja")
+
+        # 動画・音声長さの検証（音声認識後に実行）
         video_duration = extractor.video_duration
         if not audio_processor.validate_duration_match(video_duration):
             sys.exit(1)
 
-        # 音声認識実行
-        transcript_data = audio_processor.transcribe_audio(language="ja")
+        # 音声認識結果を保存
         audio_processor.save_transcript(transcript_data, language="ja")
 
     # 新機能: Markdown生成（Task 4.2）

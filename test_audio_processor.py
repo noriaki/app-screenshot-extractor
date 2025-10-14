@@ -154,7 +154,7 @@ class TestAudioProcessorValidateFiles(unittest.TestCase):
 
 
 class TestAudioProcessorGetDuration(unittest.TestCase):
-    """AudioProcessor.get_duration() のテスト"""
+    """AudioProcessor.get_duration() のテスト (Whisper結果から取得)"""
 
     def setUp(self):
         """テストごとの初期化"""
@@ -167,72 +167,98 @@ class TestAudioProcessorGetDuration(unittest.TestCase):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
         shutil.rmtree(self.output_dir, ignore_errors=True)
 
-    @patch('subprocess.run')
-    def test_get_duration_returns_correct_duration(self, mock_run):
-        """有効な音声ファイルで正しい長さを返す"""
-        # Given: 存在する音声ファイルとffprobeのモック
+    def test_get_duration_returns_none_before_transcribe(self):
+        """transcribe_audio実行前はNoneを返す"""
+        # Given: 音声ファイル
         audio_path = os.path.join(self.temp_dir, "test_audio.mp3")
         with open(audio_path, 'w') as f:
             f.write("dummy content")
 
-        # ffprobeが125.5秒を返すようモック
-        mock_result = MagicMock()
-        mock_result.stdout = "125.5\n"
-        mock_result.returncode = 0
-        mock_run.return_value = mock_result
-
-        # When: get_durationを実行
+        # When: get_durationを実行（transcribe前）
         from extract_screenshots import AudioProcessor
         processor = AudioProcessor(audio_path, self.output_dir)
+        duration = processor.get_duration()
+
+        # Then: Noneを返す
+        self.assertIsNone(duration)
+
+    @patch('extract_screenshots.get_whisper_model')
+    def test_get_duration_returns_correct_duration_after_transcribe(self, mock_get_model):
+        """transcribe_audio実行後は正しい長さを返す"""
+        # Given: 音声ファイルとWhisperの結果
+        audio_path = os.path.join(self.temp_dir, "test_audio.mp3")
+        with open(audio_path, 'w') as f:
+            f.write("dummy content")
+
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = {
+            'duration': 125.5,
+            'segments': [
+                {'start': 0.0, 'end': 2.5, 'text': 'これはテスト'}
+            ]
+        }
+        mock_get_model.return_value = mock_model
+
+        # When: transcribe_audioを実行してからget_durationを実行
+        from extract_screenshots import AudioProcessor
+        processor = AudioProcessor(audio_path, self.output_dir)
+        processor.transcribe_audio()
         duration = processor.get_duration()
 
         # Then: 正しい長さを返す
         self.assertAlmostEqual(duration, 125.5, places=1)
 
-        # ffprobeが正しく呼び出される
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args
-        self.assertIn('ffprobe', call_args[0][0])
-        self.assertIn(audio_path, call_args[0][0])
-
-    @patch('subprocess.run')
-    def test_get_duration_raises_runtime_error_when_ffprobe_not_available(self, mock_run):
-        """ffprobeが利用できない場合にRuntimeErrorを発生させる"""
-        # Given: 存在する音声ファイルとffprobeが見つからない状況
+    @patch('extract_screenshots.get_whisper_model')
+    def test_get_duration_uses_whisper_result_duration(self, mock_get_model):
+        """Whisperの結果から長さを取得する"""
+        # Given: Whisperが様々な長さを返す
         audio_path = os.path.join(self.temp_dir, "test_audio.mp3")
         with open(audio_path, 'w') as f:
             f.write("dummy content")
 
-        # ffprobeが見つからない
-        mock_run.side_effect = FileNotFoundError("ffprobe not found")
+        test_durations = [10.5, 60.0, 125.3, 270.18]
 
-        # When/Then: RuntimeErrorが発生する
-        from extract_screenshots import AudioProcessor
-        processor = AudioProcessor(audio_path, self.output_dir)
-        with self.assertRaises(RuntimeError) as context:
-            processor.get_duration()
+        for expected_duration in test_durations:
+            with self.subTest(duration=expected_duration):
+                mock_model = MagicMock()
+                mock_model.transcribe.return_value = {
+                    'duration': expected_duration,
+                    'segments': []
+                }
+                mock_get_model.return_value = mock_model
 
-        self.assertIn("ffprobe", str(context.exception).lower())
+                # When: transcribe_audioを実行
+                from extract_screenshots import AudioProcessor
+                processor = AudioProcessor(audio_path, self.output_dir)
+                processor.transcribe_audio()
 
-    @patch('subprocess.run')
-    def test_get_duration_raises_runtime_error_when_ffprobe_fails(self, mock_run):
-        """ffprobeの実行が失敗した場合にRuntimeErrorを発生させる"""
-        # Given: 存在する音声ファイルとffprobeのエラー
+                # Then: Whisperの結果から長さを取得する
+                duration = processor.get_duration()
+                self.assertAlmostEqual(duration, expected_duration, places=2)
+
+    @patch('extract_screenshots.get_whisper_model')
+    def test_get_duration_handles_missing_duration_in_result(self, mock_get_model):
+        """Whisperの結果にdurationがない場合は0.0を返す"""
+        # Given: durationキーがないWhisperの結果
         audio_path = os.path.join(self.temp_dir, "test_audio.mp3")
         with open(audio_path, 'w') as f:
             f.write("dummy content")
 
-        # ffprobeがエラーを返す
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stderr = "Invalid file format"
-        mock_run.return_value = mock_result
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = {
+            'segments': []
+            # duration キーなし
+        }
+        mock_get_model.return_value = mock_model
 
-        # When/Then: RuntimeErrorが発生する
+        # When: transcribe_audioを実行
         from extract_screenshots import AudioProcessor
         processor = AudioProcessor(audio_path, self.output_dir)
-        with self.assertRaises(RuntimeError):
-            processor.get_duration()
+        processor.transcribe_audio()
+
+        # Then: 0.0を返す
+        duration = processor.get_duration()
+        self.assertEqual(duration, 0.0)
 
 
 class TestAudioProcessorValidateDurationMatch(unittest.TestCase):
@@ -394,6 +420,7 @@ class TestAudioProcessorTranscribeAudio(unittest.TestCase):
         mock_model = MagicMock()
         mock_model.transcribe.return_value = {
             'text': 'これはテスト音声です。',
+            'duration': 4.0,
             'segments': [
                 {'start': 0.0, 'end': 2.5, 'text': 'これはテスト'},
                 {'start': 2.5, 'end': 4.0, 'text': '音声です。'}
@@ -515,7 +542,7 @@ class TestAudioProcessorTranscribeAudio(unittest.TestCase):
             f.write("dummy content")
 
         mock_model = MagicMock()
-        mock_model.transcribe.return_value = {'segments': []}
+        mock_model.transcribe.return_value = {'segments': [], 'duration': 0.0}
         mock_get_model.return_value = mock_model
 
         # When: languageを指定せずにtranscribe_audioを実行
@@ -525,6 +552,58 @@ class TestAudioProcessorTranscribeAudio(unittest.TestCase):
 
         # Then: デフォルトでlanguage="ja"が使用される
         mock_model.transcribe.assert_called_once_with(audio_path, language='ja')
+
+    @patch('extract_screenshots.get_whisper_model')
+    def test_transcribe_audio_sets_duration_from_result(self, mock_get_model):
+        """音声認識結果からdurationを設定する"""
+        # Given: 音声ファイルとWhisperの結果
+        audio_path = os.path.join(self.temp_dir, "test_audio.mp3")
+        with open(audio_path, 'w') as f:
+            f.write("dummy content")
+
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = {
+            'duration': 270.18,
+            'segments': [
+                {'start': 0.0, 'end': 2.5, 'text': 'テスト'}
+            ]
+        }
+        mock_get_model.return_value = mock_model
+
+        # When: transcribe_audioを実行
+        from extract_screenshots import AudioProcessor
+        processor = AudioProcessor(audio_path, self.output_dir)
+        processor.transcribe_audio()
+
+        # Then: audio_durationが設定される
+        self.assertIsNotNone(processor.audio_duration)
+        self.assertAlmostEqual(processor.audio_duration, 270.18, places=2)
+
+    @patch('extract_screenshots.get_whisper_model')
+    @patch('builtins.print')
+    def test_transcribe_audio_displays_duration(self, mock_print, mock_get_model):
+        """音声認識後に音声の長さを表示する"""
+        # Given: 音声ファイル
+        audio_path = os.path.join(self.temp_dir, "test_audio.mp3")
+        with open(audio_path, 'w') as f:
+            f.write("dummy content")
+
+        mock_model = MagicMock()
+        mock_model.transcribe.return_value = {
+            'duration': 125.5,
+            'segments': []
+        }
+        mock_get_model.return_value = mock_model
+
+        # When: transcribe_audioを実行
+        from extract_screenshots import AudioProcessor
+        processor = AudioProcessor(audio_path, self.output_dir)
+        processor.transcribe_audio()
+
+        # Then: 音声の長さが表示される
+        call_args_list = [str(call) for call in mock_print.call_args_list]
+        found_duration = any("Audio duration" in call and "125.5" in call for call in call_args_list)
+        self.assertTrue(found_duration, "Should display audio duration")
 
 
 class TestAudioProcessorSaveTranscript(unittest.TestCase):
