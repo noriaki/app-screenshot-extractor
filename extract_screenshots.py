@@ -662,6 +662,128 @@ class AudioProcessor:
         return output_path
 
 
+class TimestampSynchronizer:
+    """タイムスタンプ同期クラス"""
+
+    def __init__(self, tolerance: float = 5.0):
+        """
+        Args:
+            tolerance: 同期許容範囲（秒）、この範囲内の最近傍を選択
+        """
+        self.tolerance = tolerance
+
+    def synchronize(self,
+                    screenshots: List[Dict],
+                    transcripts: List[Dict]) -> List[Dict]:
+        """
+        スクリーンショットと音声セグメントを同期
+
+        Args:
+            screenshots: metadata.jsonのスクリーンショット情報
+            transcripts: transcript.jsonの音声セグメント情報
+
+        Returns:
+            同期結果リスト: [
+                {
+                    "screenshot": {...},  # 元のスクリーンショット情報
+                    "transcript": {...} | None,  # 対応する音声セグメント
+                    "matched": bool  # マッチング成功フラグ
+                },
+                ...
+            ]
+
+        Preconditions:
+            - screenshotsとtranscriptsは共にタイムスタンプでソート済み
+            - timestampキーが存在する
+
+        Postconditions:
+            - 全てのスクリーンショットが結果に含まれる
+            - 対応する音声がない場合、transcriptはNone
+            - 結果はスクリーンショットの順序を維持
+
+        Invariants:
+            - 戻り値の長さ == len(screenshots)
+        """
+        result = []
+
+        for screenshot in screenshots:
+            # 最も近い音声セグメントを検索
+            nearest_transcript = self.find_nearest_transcript(
+                screenshot['timestamp'],
+                transcripts
+            )
+
+            # 同期結果を構築
+            if nearest_transcript is not None:
+                result.append({
+                    'screenshot': screenshot,
+                    'transcript': nearest_transcript,
+                    'matched': True
+                })
+            else:
+                result.append({
+                    'screenshot': screenshot,
+                    'transcript': None,
+                    'matched': False
+                })
+
+        return result
+
+    def find_nearest_transcript(self,
+                                screenshot_time: float,
+                                transcripts: List[Dict]) -> Optional[Dict]:
+        """
+        スクリーンショットのタイムスタンプに最も近い音声セグメントを検索
+
+        Args:
+            screenshot_time: スクリーンショットのタイムスタンプ（秒）
+            transcripts: 音声セグメントリスト
+
+        Returns:
+            最も近いセグメント、またはNone
+
+        Preconditions:
+            - screenshot_timeは0以上
+            - transcriptsの各要素にstart, endキーが存在
+
+        Postconditions:
+            - 戻り値がNoneでない場合、toleranceの範囲内
+            - 複数候補がある場合、最も近いものを返す
+        """
+        if not transcripts:
+            return None
+
+        min_distance = float('inf')
+        nearest = None
+
+        for segment in transcripts:
+            # セグメントの中央時間を計算
+            segment_center = (segment['start'] + segment['end']) / 2
+
+            # 距離を計算
+            distance = self.calculate_distance(screenshot_time, segment_center)
+
+            # 許容範囲内で最も近いものを選択
+            if distance <= self.tolerance and distance < min_distance:
+                min_distance = distance
+                nearest = segment
+
+        return nearest
+
+    def calculate_distance(self, time1: float, time2: float) -> float:
+        """
+        2つのタイムスタンプ間の距離を計算
+
+        Args:
+            time1: タイムスタンプ1（秒）
+            time2: タイムスタンプ2（秒）
+
+        Returns:
+            絶対距離（秒）
+        """
+        return abs(time1 - time2)
+
+
 def main():
     """メイン関数"""
     parser = argparse.ArgumentParser(
