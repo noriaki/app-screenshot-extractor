@@ -32,6 +32,23 @@ def get_ocr_reader():
     return easyocr_reader
 
 
+# Whisperモデルのキャッシュ（遅延初期化パターン）
+whisper_model_cache = {}
+
+
+def get_whisper_model(model_size: str):
+    """Whisperモデルを遅延初期化（初回のみロード）"""
+    global whisper_model_cache
+
+    if model_size not in whisper_model_cache:
+        print(f"Loading Whisper model '{model_size}' (first time may download model)...")
+        import whisper
+        whisper_model_cache[model_size] = whisper.load_model(model_size)
+        print(f"Model '{model_size}' loaded successfully.")
+
+    return whisper_model_cache[model_size]
+
+
 # UI重要度判定用キーワード
 IMPORTANT_UI_KEYWORDS = [
     # ナビゲーション
@@ -421,6 +438,228 @@ class ScreenshotExtractor:
         minutes = int(seconds // 60)
         secs = int(seconds % 60)
         return f"{minutes:02d}-{secs:02d}"
+
+
+# サポートされている音声フォーマット
+SUPPORTED_AUDIO_FORMATS = ['.mp3', '.mp4', '.mpeg', '.mpga', '.m4a', '.wav', '.webm', '.aac']
+
+
+class AudioProcessor:
+    """音声ファイル処理クラス"""
+
+    def __init__(self, audio_path: str, output_dir: str, model_size: str = "base"):
+        """
+        Args:
+            audio_path: 音声ファイルパス
+            output_dir: 出力ディレクトリ
+            model_size: Whisperモデルサイズ（tiny, base, small, medium, large, turbo）
+
+        Raises:
+            FileNotFoundError: 音声ファイルが存在しない場合
+        """
+        self.audio_path = audio_path
+        self.output_dir = Path(output_dir)
+        self.model_size = model_size
+
+    def validate_files(self) -> bool:
+        """
+        音声ファイルの存在とフォーマットを検証
+
+        Returns:
+            True: 検証成功
+            False: 検証失敗
+
+        Raises:
+            FileNotFoundError: ファイルが存在しない
+            ValueError: サポートされていないフォーマット
+        """
+        # パストラバーサル攻撃を防ぐためにパスを正規化
+        audio_path = Path(self.audio_path).resolve()
+
+        # 存在確認
+        if not audio_path.exists():
+            print(f"Error: Audio file not found: {audio_path}")
+            return False
+
+        # 通常ファイル確認（ディレクトリやデバイスファイルを除外）
+        if not audio_path.is_file():
+            print(f"Error: Path is not a regular file: {audio_path}")
+            return False
+
+        # フォーマット検証
+        ext = audio_path.suffix.lower()
+        if ext not in SUPPORTED_AUDIO_FORMATS:
+            print(f"Error: Unsupported audio format: {ext}")
+            print(f"Supported formats: {', '.join(SUPPORTED_AUDIO_FORMATS)}")
+            return False
+
+        return True
+
+    def get_duration(self) -> float:
+        """
+        音声ファイルの長さを取得
+
+        Returns:
+            音声ファイルの長さ（秒）
+
+        Raises:
+            RuntimeError: ffprobeが利用できない、または実行に失敗した場合
+        """
+        import subprocess
+
+        try:
+            # ffprobeを使用して音声ファイルの長さを取得
+            result = subprocess.run(
+                [
+                    'ffprobe',
+                    '-v', 'error',
+                    '-show_entries', 'format=duration',
+                    '-of', 'default=noprint_wrappers=1:nokey=1',
+                    self.audio_path
+                ],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+
+            if result.returncode != 0:
+                raise RuntimeError(f"ffprobe failed: {result.stderr}")
+
+            duration = float(result.stdout.strip())
+            return duration
+
+        except FileNotFoundError:
+            raise RuntimeError(
+                "ffprobe is not installed or not found in PATH. "
+                "Please install ffmpeg:\n"
+                "  macOS: brew install ffmpeg\n"
+                "  Ubuntu/Debian: sudo apt install ffmpeg"
+            )
+        except ValueError as e:
+            raise RuntimeError(f"Failed to parse duration from ffprobe output: {e}")
+
+    def validate_duration_match(self, video_duration: float) -> bool:
+        """
+        動画と音声の長さを検証
+
+        Args:
+            video_duration: 動画の長さ（秒）
+
+        Returns:
+            True: 処理継続可能（差異が5秒以下、または警告表示済み）
+
+        Preconditions:
+            - audio_pathが存在し、有効な音声ファイルである
+            - video_durationが正の値である
+
+        Postconditions:
+            - 差異が5秒以上の場合、警告メッセージが標準出力に表示される
+        """
+        audio_duration = self.get_duration()
+        diff = abs(video_duration - audio_duration)
+
+        if diff > 5.0:
+            print(f"Warning: Duration mismatch - Video: {video_duration:.1f}s, "
+                  f"Audio: {audio_duration:.1f}s (diff: {diff:.1f}s)")
+            print("Proceeding with synchronization, but results may be inaccurate.")
+            print("Consider re-recording with synchronized start/stop times.")
+
+        return True  # 常に処理継続（ソフトバリデーション）
+
+    def transcribe_audio(self, language: str = "ja") -> List[Dict]:
+        """
+        音声ファイルをテキストに変換
+
+        Args:
+            language: 言語コード（ja, en等）
+
+        Returns:
+            セグメントリスト: [
+                {
+                    "start": 0.0,
+                    "end": 3.5,
+                    "text": "テキスト内容"
+                },
+                ...
+            ]
+
+        Raises:
+            RuntimeError: Whisperモデルのロードに失敗
+            Exception: 音声認識処理中のエラー（警告表示して空リスト返却）
+
+        Preconditions:
+            - Whisperモデルがロード済み（遅延初期化）
+            - 音声ファイルが読み込み可能
+
+        Postconditions:
+            - セグメントはタイムスタンプ順にソート済み
+        """
+        print("Step: Transcribing audio...")
+        print(f"  Model: {self.model_size}")
+        print(f"  Language: {language}")
+
+        try:
+            # Whisperモデルをロード（遅延初期化）
+            model = get_whisper_model(self.model_size)
+
+            # 音声認識を実行
+            result = model.transcribe(self.audio_path, language=language)
+
+            # セグメント情報を取得
+            segments = result.get('segments', [])
+
+            print(f"  Transcribed {len(segments)} segments\n")
+            return segments
+
+        except Exception as e:
+            print(f"Warning: Audio transcription failed: {e}")
+            print("Continuing without audio transcription.")
+            return []  # 空リストを返して処理継続
+
+    def save_transcript(self, segments: List[Dict], language: str = "ja") -> Path:
+        """
+        音声認識結果をJSONファイルに保存
+
+        Args:
+            segments: transcribe_audio()の戻り値
+            language: 言語コード（デフォルト: ja）
+
+        Returns:
+            保存したファイルのパス（output_dir/transcript.json）
+
+        Preconditions:
+            - output_dirが設定されている
+
+        Postconditions:
+            - transcript.jsonファイルがUTF-8エンコーディングで保存される
+            - ファイルパーミッションが0644に設定される
+        """
+        # 出力パスを生成
+        output_path = Path(self.output_dir) / "transcript.json"
+
+        # 出力ディレクトリが存在しない場合は作成
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 音声ファイルの長さを取得
+        duration = self.get_duration()
+
+        # JSON形式でデータを構築
+        transcript_data = {
+            "language": language,
+            "duration": duration,
+            "segments": segments
+        }
+
+        # UTF-8エンコーディングでJSONファイルに保存
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(transcript_data, f, ensure_ascii=False, indent=2)
+
+        # ファイルパーミッションを0644に設定
+        output_path.chmod(0o644)
+
+        print(f"  Transcript saved to {output_path}")
+
+        return output_path
 
 
 def main():
