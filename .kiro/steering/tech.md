@@ -10,6 +10,7 @@
 - **Video Processing**: OpenCV (cv2)
 - **Image Processing**: Pillow, imagehash
 - **OCR**: EasyOCR (Japanese/English)
+- **Audio Recognition**: OpenAI Whisper (local execution)
 - **Platform**: macOS (Apple Silicon optimized)
 
 ## Key Libraries
@@ -17,6 +18,7 @@
 - **opencv-python**: 動画読み込み、フレーム抽出、画像処理
 - **imagehash**: Perceptual Hashing (pHash) による画面遷移検出
 - **EasyOCR**: 日本語・英語OCRによるUI要素検出（CPU mode）
+- **openai-whisper**: 音声認識エンジン（日本語対応、ローカル実行）
 - **numpy**: 画像データの数値計算
 - **tqdm**: CLI進捗表示
 
@@ -35,7 +37,8 @@
 ### Performance
 - 高速化のため720pにダウンサンプルして処理（元解像度は保持）
 - フレームスキップ（0.5秒ごと）で処理速度向上
-- 遅延初期化（EasyOCRモデルは初回使用時にロード）
+- 遅延初期化パターン（EasyOCR、Whisperモデルは初回使用時にロード）
+- グローバルキャッシュでモデルの再ロードを回避
 
 ## Development Environment
 
@@ -55,8 +58,9 @@
 ## Key Technical Decisions
 
 ### Apple Silicon CPU Mode
-- EasyOCR は `gpu=False` で動作（Apple Silicon の CPU パフォーマンスで十分）
+- EasyOCR / Whisper は `gpu=False` / CPU mode で動作（Apple Silicon の CPU パフォーマンスで十分）
 - GPU モードはセットアップが複雑で、CPU で実用的な速度が得られる
+- メモリ効率: EasyOCR + Whisper 同時ロードでも 3GB 以内
 
 ### Perceptual Hashing for Scene Detection
 - フレーム間の視覚的差分を高速に計算（ピクセル単位の比較より効率的）
@@ -70,5 +74,17 @@
 - `final_score = (transition_magnitude * 2.0) + (stability_score * 0.5) + (ui_importance_score * 1.5)`
 - 遷移の大きさを重視しつつ、安定性とUI重要度も考慮
 
+### Timestamp Synchronization (v2.0.0)
+- 最近傍マッチングアルゴリズム: スクリーンショットのタイムスタンプと音声セグメント中央時間の距離を計算
+- 許容範囲: 5秒以内で最も近いセグメントを選択
+- 未対応時の処理: 音声がない場合はプレースホルダー "(説明文なし)" を表示
+
+### Lazy Initialization Pattern (v2.0.0)
+- グローバル変数でモデルキャッシュ管理: `easyocr_reader`, `whisper_model_cache`
+- 初回呼び出し時のみモデルをロード、以降は再利用
+- メモリ効率とパフォーマンスのバランスを最適化
+
 ---
 _Document standards and patterns, not every dependency_
+
+_Updated: 2025-10-14 - Added audio-markdown-export patterns (v2.0.0)_
