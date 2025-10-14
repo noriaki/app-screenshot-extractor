@@ -153,26 +153,26 @@
   - エラー後にsys.exit(1)で終了する
   - _Requirements: 7.5_
 
-- [ ] 6. テストの実装
+- [x] 6. テストの実装
   - AudioProcessor, TimestampSynchronizer, MarkdownGeneratorの単体テストを実装する
   - 統合テスト（E2Eテスト）を実装する
   - パフォーマンステストを実装する
   - _Requirements: すべて_
 
-- [ ] 6.1 AudioProcessor単体テストの実装
+- [x] 6.1 AudioProcessor単体テストの実装
   - validate_files()のテスト（存在確認、フォーマット検証）
   - get_duration()のテスト（正常系、ffprobe利用不可）
   - validate_duration_match()のテスト（差異5秒以下、5秒以上）
   - transcribe_audio()のモックテスト（正常系、異常系）
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 2.4_
 
-- [ ] 6.2 TimestampSynchronizer単体テストの実装
+- [x] 6.2 TimestampSynchronizer単体テストの実装
   - find_nearest_transcript()のテスト（最近傍選択、tolerance範囲外）
   - synchronize()のテスト（全スクリーンショット含有、マッチングフラグ、順序維持）
   - calculate_distance()のテスト（正しい距離計算）
   - _Requirements: 3.1, 3.2, 3.3, 3.4_
 
-- [ ] 6.3 MarkdownGenerator単体テストの実装
+- [x] 6.3 MarkdownGenerator単体テストの実装
   - format_timestamp()のテスト（秒数からMM:SS変換、境界値）
   - format_section_title()のテスト（見出し生成、フォールバック）
   - format_description()のテスト（音声テキストあり、なし）
@@ -180,7 +180,7 @@
   - save()のテスト（ファイル保存、上書き警告）
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [ ] 6.4 統合テスト（E2E）の実装
+- [x] 6.4 統合テスト（E2E）の実装
   - 基本フロー（音声あり）のテスト
   - 基本フロー（音声なし）のテスト
   - 音声のみ（Markdownなし）のテスト
@@ -188,28 +188,28 @@
   - 動画・音声長さ不一致のテスト
   - _Requirements: すべて_
 
-- [ ] 6.5 パフォーマンステストの実装
+- [x] 6.5 パフォーマンステストの実装
   - 音声認識処理時間の測定（1分、5分の音声）
   - エンドツーエンド処理時間の測定（5分の動画+音声）
   - メモリ使用量の測定（baseモデル、EasyOCR+Whisper同時ロード）
   - 長時間音声処理のスケーラビリティテスト（30分、1時間）
   - _Requirements: すべて_
 
-- [ ] 7. ドキュメント整備
+- [x] 7. ドキュメント整備
   - README.mdに新機能の説明を追加する
   - requirements.txtにopenai-whisperを追加する
   - CHANGELOG.mdを作成する
   - 使用例とコマンドラインサンプルを追加する
   - _Requirements: すべて_
 
-- [ ] 7.1 README.mdの更新
+- [x] 7.1 README.mdの更新
   - 音声・動画統合機能の概要を追加する
   - `--audio`と`--markdown`オプションの使用方法を説明する
   - コマンドライン実行例を3パターン追加する（音声あり、音声なし、音声のみ）
   - 出力ファイル（transcript.json, article.md）の説明を追加する
   - _Requirements: すべて_
 
-- [ ] 7.2 依存関係とChangelog整備
+- [x] 7.2 依存関係とChangelog整備
   - requirements.txtにopenai-whisperを追加する
   - CHANGELOG.mdを作成してv2.0.0の変更内容を記載する
   - バージョン情報と新機能一覧を明記する
