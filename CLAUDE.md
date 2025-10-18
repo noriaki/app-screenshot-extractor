@@ -43,3 +43,29 @@ Kiro-style Spec Driven Development implementation on AI-DLC (AI Development Life
 - Default files: `product.md`, `tech.md`, `structure.md`
 - Custom files are supported (managed via `/kiro:steering-custom`)
 
+## Development Standards
+
+### Git Commit Messages
+- **Language**: English (concise and clear)
+- **Format**: Imperative mood in subject line (e.g., "Add feature" not "Added feature")
+- **Structure**:
+  - Subject: Brief summary (50 chars max)
+  - Body: Detailed explanation with Changes/Benefits sections (optional)
+  - Footer: Claude Code attribution
+- **Example**:
+  ```
+  Improve audio duration handling and add test documentation
+
+  Changes:
+  - Refactor: Get audio duration from Whisper result instead of ffprobe
+  - Add: Comprehensive test execution section in README.md
+
+  Benefits:
+  - Simpler implementation (no subprocess dependency)
+  - Better documentation for running tests
+
+  🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+  Co-Authored-By: Claude <noreply@anthropic.com>
+  ```
+  
