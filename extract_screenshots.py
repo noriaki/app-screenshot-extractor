@@ -18,6 +18,10 @@ import imagehash
 from PIL import Image
 from tqdm import tqdm
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 # EasyOCRは初回実行時にモデルをダウンロードするため、遅延インポート
 easyocr_reader = None
 
@@ -1636,6 +1640,11 @@ def run_integration_flow(video_path: str,
     if len(metadata) == 0:
         print("\nError: No screenshots extracted")
         sys.exit(1)
+
+    # Add file_path to each metadata item for AI article generation
+    screenshots_dir = Path(output_dir) / "screenshots"
+    for m in metadata:
+        m["file_path"] = str(screenshots_dir / m["filename"])
 
     # 新機能: 音声処理（Task 4.2）
     transcript_data = None
