@@ -198,10 +198,13 @@ python -m unittest discover -s . -p "test_*.py" -v
 | `test_audio_processor.py` | AudioProcessorクラスの単体テスト（音声ファイル検証、音声認識、保存機能） |
 | `test_timestamp_synchronizer.py` | TimestampSynchronizerクラスの単体テスト（最近傍検索、同期処理） |
 | `test_markdown_generator.py` | MarkdownGeneratorクラスの単体テスト（Markdown生成、フォーマット、保存） |
-| `test_cli_integration.py` | CLI統合テスト（オプション解析、統合フロー、後方互換性） |
+| `test_ai_content_generator.py` | AIContentGeneratorクラスの単体テスト（Claude API呼び出し、モデル選択、品質検証） |
+| `test_cli_integration.py` | CLI統合テスト（オプション解析、統合フロー、後方互換性、モデル選択） |
 | `test_e2e_integration.py` | エンドツーエンドテスト（音声あり/なし、エラーケース） |
 | `test_error_handling.py` | エラーハンドリングテスト（ファイル不在、フォーマット不正、ffmpeg不在） |
 | `test_performance.py` | パフォーマンステスト（処理時間、メモリ使用量、スケーラビリティ） |
+| `test_error_cases.py` | **手動テスト**: エラーケースの検証（非推奨モデル、無効なモデル名、ヘルプメッセージ） |
+| `test_manual_e2e.py` | **手動テスト**: 実際のClaude APIでのE2Eテスト（3つのモデルで記事生成） |
 
 ### 特定のテストファイルを実行
 
@@ -225,10 +228,46 @@ test_format_description_with_text (test_markdown_generator.TestMarkdownGenerator
 test_format_section_title_fallback (test_markdown_generator.TestMarkdownGenerator) ... ok
 ...
 ----------------------------------------------------------------------
-Ran 118 tests in 4.569s
+Ran 199 tests in 5.254s
 
-OK (skipped=1)
+OK (skipped=2)
 ```
+
+### 手動E2Eテストの実行
+
+AIモデルアップグレードの動作確認のため、手動E2Eテストスクリプトが用意されています。
+
+#### エラーケースのテスト
+
+```bash
+# 非推奨モデル・無効なモデル名のエラーメッセージを確認
+python test_error_cases.py
+```
+
+このテストは以下を検証します:
+- 非推奨モデル（`claude-3-5-sonnet-20241022`）指定時のエラーメッセージ
+- 無効なモデル名指定時のエラーメッセージ
+- ヘルプメッセージに各モデルの説明が含まれること
+
+#### 実際のClaude APIでのテスト
+
+**前提条件**:
+- `ANTHROPIC_API_KEY` 環境変数が設定されていること
+- サンプル動画ファイル（`sample_video/demo.mp4`）が存在すること
+
+```bash
+# 3つのモデル（Haiku、Sonnet、Opus）で実際にAI記事生成を実行
+python test_manual_e2e.py
+```
+
+このテストは以下を検証します:
+- Haiku 4.5モデルでのAI記事生成
+- Sonnet 4.5モデル（デフォルト）でのAI記事生成
+- Opus 4.1モデルでのAI記事生成
+- 各モデルで `ai_metadata.json` に正しいモデル名が記録されること
+- 品質メタデータが正常に記録されること
+
+**注意**: このテストは実際にClaude APIを呼び出すため、APIクレジットを消費します。
 
 ## 出力形式
 
