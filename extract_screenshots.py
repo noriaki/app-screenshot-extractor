@@ -1456,10 +1456,14 @@ class AIContentGenerator:
         else:
             template_name = "article_without_audio.txt"
 
+        # ファイル名リストを生成（箇条書き形式）
+        screenshot_filenames = "\n".join([f"- {path.name}" for path in screenshot_paths])
+
         template = prompt_manager.load_template(template_name)
         prompt_text = prompt_manager.render(template, {
             "app_name": app_name,
-            "total_screenshots": len(screenshot_paths)
+            "total_screenshots": len(screenshot_paths),
+            "screenshot_filenames": screenshot_filenames
         })
 
         # テキストプロンプトブロックを追加
