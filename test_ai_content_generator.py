@@ -1333,5 +1333,291 @@ class TestAIContentGeneratorIntegration(unittest.TestCase):
         self.assertGreater(len(result["metadata"]["quality_warnings"]), 0)
 
 
+class TestAIContentGeneratorModelUpgrade(unittest.TestCase):
+    """Task 4.2 (model-upgrade): AIContentGeneratorクラスのモデル設定テスト"""
+
+    def setUp(self):
+        """テスト前の準備"""
+        # 一時ディレクトリ作成
+        self.test_dir = tempfile.mkdtemp()
+        self.output_dir = Path(self.test_dir) / "output"
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # 環境変数設定
+        self.original_api_key = os.environ.get('ANTHROPIC_API_KEY')
+        os.environ['ANTHROPIC_API_KEY'] = 'test-api-key-12345'
+
+        # anthropicモジュールのモック
+        self.mock_anthropic_module = MagicMock()
+        self.mock_anthropic_class = MagicMock()
+        self.mock_anthropic_module.Anthropic = self.mock_anthropic_class
+        sys.modules['anthropic'] = self.mock_anthropic_module
+
+    def tearDown(self):
+        """テスト後のクリーンアップ"""
+        if os.path.exists(self.test_dir):
+            shutil.rmtree(self.test_dir)
+
+        if self.original_api_key:
+            os.environ['ANTHROPIC_API_KEY'] = self.original_api_key
+        elif 'ANTHROPIC_API_KEY' in os.environ:
+            del os.environ['ANTHROPIC_API_KEY']
+
+        if 'anthropic' in sys.modules:
+            del sys.modules['anthropic']
+        if 'extract_screenshots' in sys.modules:
+            del sys.modules['extract_screenshots']
+
+    def test_default_model_updated(self):
+        """
+        Given: AIContentGeneratorをデフォルト引数で初期化する
+        When: モデル名を確認する
+        Then: self.modelが'claude-sonnet-4-5-20250929'である
+        """
+        mock_client = Mock()
+        self.mock_anthropic_class.return_value = mock_client
+
+        from extract_screenshots import AIContentGenerator
+        generator = AIContentGenerator(
+            output_dir=str(self.output_dir),
+            api_key="test-key"
+        )
+
+        self.assertEqual(generator.model, 'claude-sonnet-4-5-20250929')
+
+    def test_haiku_model_initialization(self):
+        """
+        Given: AIContentGeneratorをmodel='claude-haiku-4-5-20251001'で初期化する
+        When: モデル名を確認する
+        Then: self.modelが'claude-haiku-4-5-20251001'である
+        """
+        mock_client = Mock()
+        self.mock_anthropic_class.return_value = mock_client
+
+        from extract_screenshots import AIContentGenerator
+        generator = AIContentGenerator(
+            output_dir=str(self.output_dir),
+            api_key="test-key",
+            model='claude-haiku-4-5-20251001'
+        )
+
+        self.assertEqual(generator.model, 'claude-haiku-4-5-20251001')
+
+    def test_sonnet_model_initialization(self):
+        """
+        Given: AIContentGeneratorをmodel='claude-sonnet-4-5-20250929'で初期化する
+        When: モデル名を確認する
+        Then: self.modelが'claude-sonnet-4-5-20250929'である
+        """
+        mock_client = Mock()
+        self.mock_anthropic_class.return_value = mock_client
+
+        from extract_screenshots import AIContentGenerator
+        generator = AIContentGenerator(
+            output_dir=str(self.output_dir),
+            api_key="test-key",
+            model='claude-sonnet-4-5-20250929'
+        )
+
+        self.assertEqual(generator.model, 'claude-sonnet-4-5-20250929')
+
+    def test_opus_model_initialization(self):
+        """
+        Given: AIContentGeneratorをmodel='claude-opus-4-1-20250805'で初期化する
+        When: モデル名を確認する
+        Then: self.modelが'claude-opus-4-1-20250805'である
+        """
+        mock_client = Mock()
+        self.mock_anthropic_class.return_value = mock_client
+
+        from extract_screenshots import AIContentGenerator
+        generator = AIContentGenerator(
+            output_dir=str(self.output_dir),
+            api_key="test-key",
+            model='claude-opus-4-1-20250805'
+        )
+
+        self.assertEqual(generator.model, 'claude-opus-4-1-20250805')
+
+    def test_generate_article_uses_specified_model(self):
+        """
+        Given: AIContentGeneratorをmodel='claude-haiku-4-5-20251001'で初期化する
+        When: generate_article()を呼び出す（モックAPI）
+        Then: Claude API呼び出しのmodelパラメータが'claude-haiku-4-5-20251001'である
+        """
+        # モックレスポンス
+        mock_response = Mock()
+        mock_response.content = [Mock(text="# テスト記事\n\n" + "これはテスト記事です。" * 100)]
+        mock_response.usage = Mock(input_tokens=1000, output_tokens=500)
+        mock_response.model = "claude-haiku-4-5-20251001"
+
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_response
+        self.mock_anthropic_class.return_value = mock_client
+
+        from extract_screenshots import AIContentGenerator
+        generator = AIContentGenerator(
+            output_dir=str(self.output_dir),
+            api_key="test-key",
+            model='claude-haiku-4-5-20251001'
+        )
+
+        # スクリーンショット作成
+        screenshots_dir = self.output_dir / "screenshots"
+        screenshots_dir.mkdir(parents=True, exist_ok=True)
+
+        test_image_path = screenshots_dir / "01_00-15_score87.png"
+        from PIL import Image
+        img = Image.new('RGB', (100, 100), color='red')
+        img.save(test_image_path)
+
+        # synchronized_data作成
+        synchronized_data = [
+            {
+                "screenshot": {
+                    "file_path": str(test_image_path),
+                    "timestamp": 15.0,
+                    "score": 87.5
+                },
+                "transcript": None,
+                "matched": False
+            }
+        ]
+
+        # 記事生成
+        result = generator.generate_article(
+            synchronized_data=synchronized_data,
+            app_name="テストアプリ",
+            output_format="markdown"
+        )
+
+        # API呼び出しを検証
+        call_args = mock_client.messages.create.call_args
+        self.assertEqual(call_args.kwargs['model'], 'claude-haiku-4-5-20251001')
+
+    def test_metadata_includes_model_name(self):
+        """
+        Given: AIContentGeneratorでgenerate_article()を実行する
+        When: ai_metadata.jsonを読み込む
+        Then: "model"フィールドが使用したモデル名と一致する
+        """
+        # モックレスポンス
+        mock_response = Mock()
+        mock_response.content = [Mock(text="# テスト記事\n\n" + "これはテスト記事です。" * 100)]
+        mock_response.usage = Mock(input_tokens=1000, output_tokens=500)
+        mock_response.model = "claude-sonnet-4-5-20250929"
+
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_response
+        self.mock_anthropic_class.return_value = mock_client
+
+        from extract_screenshots import AIContentGenerator
+        generator = AIContentGenerator(
+            output_dir=str(self.output_dir),
+            api_key="test-key",
+            model='claude-sonnet-4-5-20250929'
+        )
+
+        # スクリーンショット作成
+        screenshots_dir = self.output_dir / "screenshots"
+        screenshots_dir.mkdir(parents=True, exist_ok=True)
+
+        test_image_path = screenshots_dir / "01_00-15_score87.png"
+        from PIL import Image
+        img = Image.new('RGB', (100, 100), color='red')
+        img.save(test_image_path)
+
+        # synchronized_data作成
+        synchronized_data = [
+            {
+                "screenshot": {
+                    "file_path": str(test_image_path),
+                    "timestamp": 15.0,
+                    "score": 87.5
+                },
+                "transcript": None,
+                "matched": False
+            }
+        ]
+
+        # 記事生成
+        result = generator.generate_article(
+            synchronized_data=synchronized_data,
+            app_name="テストアプリ",
+            output_format="markdown"
+        )
+
+        # メタデータにモデル名が記録されていることを確認
+        self.assertEqual(result["metadata"]["model"], 'claude-sonnet-4-5-20250929')
+
+    def test_stdout_displays_model_name(self, capsys=None):
+        """
+        Given: AIContentGeneratorでgenerate_article()を実行する
+        When: 標準出力をキャプチャする
+        Then: "Generating AI article with model: claude-sonnet-4-5-20250929"が含まれる
+
+        Note: This test verifies the implementation prints model name to stdout
+        """
+        # モックレスポンス
+        mock_response = Mock()
+        mock_response.content = [Mock(text="# テスト記事\n\n" + "これはテスト記事です。" * 100)]
+        mock_response.usage = Mock(input_tokens=1000, output_tokens=500)
+        mock_response.model = "claude-sonnet-4-5-20250929"
+
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_response
+        self.mock_anthropic_class.return_value = mock_client
+
+        from extract_screenshots import AIContentGenerator
+        generator = AIContentGenerator(
+            output_dir=str(self.output_dir),
+            api_key="test-key",
+            model='claude-sonnet-4-5-20250929'
+        )
+
+        # スクリーンショット作成
+        screenshots_dir = self.output_dir / "screenshots"
+        screenshots_dir.mkdir(parents=True, exist_ok=True)
+
+        test_image_path = screenshots_dir / "01_00-15_score87.png"
+        from PIL import Image
+        img = Image.new('RGB', (100, 100), color='red')
+        img.save(test_image_path)
+
+        # synchronized_data作成
+        synchronized_data = [
+            {
+                "screenshot": {
+                    "file_path": str(test_image_path),
+                    "timestamp": 15.0,
+                    "score": 87.5
+                },
+                "transcript": None,
+                "matched": False
+            }
+        ]
+
+        # 標準出力をキャプチャ（pytestのcapsysではなく、手動でモック）
+        import io
+        import sys
+        captured_output = io.StringIO()
+        old_stdout = sys.stdout
+        sys.stdout = captured_output
+
+        try:
+            # 記事生成
+            result = generator.generate_article(
+                synchronized_data=synchronized_data,
+                app_name="テストアプリ",
+                output_format="markdown"
+            )
+        finally:
+            sys.stdout = old_stdout
+
+        output = captured_output.getvalue()
+        # モデル名が標準出力に表示されていることを確認
+        self.assertIn('claude-sonnet-4-5-20250929', output)
+
+
 if __name__ == '__main__':
     unittest.main()
