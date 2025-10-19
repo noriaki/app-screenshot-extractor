@@ -21,7 +21,19 @@ output/
 │   └── {index}_{timestamp}_score{score}.png
 ├── metadata.json         # スコアリング詳細
 ├── transcript.json       # 音声認識結果（--audioオプション使用時）
-└── article.md           # Markdown記事（--markdownオプション使用時）
+├── article.md            # Markdown記事（--markdownオプション使用時）
+├── ai_article.md         # AI生成記事（--ai-articleオプション使用時、v3.0.0）
+└── ai_metadata.json      # AI生成メタデータ（品質スコア、トークン使用量、v3.0.0）
+```
+
+### Prompts Directory
+**Location**: `./prompts/` (v3.0.0)
+**Purpose**: AI記事生成用プロンプトテンプレート
+**Structure**:
+```
+prompts/
+├── article_with_audio.txt      # 音声あり記事用テンプレート
+└── article_without_audio.txt   # 音声なし記事用テンプレート
 ```
 
 ### Virtual Environment
@@ -79,6 +91,28 @@ class MarkdownGenerator:
     def save(...)                     # ファイル保存
 ```
 
+**QualityValidator** (v3.0.0): AI記事品質検証
+```python
+class QualityValidator:
+    def validate(...)                 # 構造検証（セクション、文字数）
+    def calculate_quality_score(...)  # 品質スコア計算
+```
+
+**PromptTemplateManager** (v3.0.0): プロンプトテンプレート管理
+```python
+class PromptTemplateManager:
+    def load_template(...)            # テンプレートファイル読み込み
+    def format_prompt(...)            # 変数置換とプロンプト生成
+```
+
+**AIContentGenerator** (v3.0.0): AI記事生成
+```python
+class AIContentGenerator:
+    def generate_article(...)         # Claude API呼び出し
+    def _call_claude_api_with_retry(...)  # リトライロジック
+    def _encode_image_base64(...)     # 画像エンコード
+```
+
 ### Stage-Based Processing
 5つの処理ステージを順次実行:
 1. Scene Transition Detection (画面遷移検出)
@@ -97,7 +131,8 @@ class MarkdownGenerator:
 - `argparse` でコマンドライン引数を処理
 - 必須: `--input` (入力動画パス)
 - 既存オプション: `--output`, `--count`, `--threshold`, `--interval`
-- 新規オプション (v2.0.0): `--audio`, `--markdown`, `--model-size`
+- v2.0.0オプション: `--audio`, `--markdown`, `--model-size`
+- v3.0.0オプション: `--ai-article`, `--app-name`, `--ai-model`, `--output-format`
 - 統合フロー: `run_integration_flow()` で全機能をオーケストレーション
 
 ## Output File Naming
@@ -112,20 +147,24 @@ class MarkdownGenerator:
 
 ### Markdown Files
 - `article.md` (v2.0.0): 統合記事（H1タイトル、H2セクション、画像リンク、説明文）
+- `ai_article.md` (v3.0.0): AI生成記事（Claude APIによる高品質記事）
+- `ai_metadata.json` (v3.0.0): AI生成メタデータ（品質スコア、トークン使用量、検証結果）
 
-## Testing Patterns (v2.0.0)
+## Testing Patterns (v2.0.0, v3.0.0)
 
 ### Test Organization
 - Unit tests: `test_{class_name}.py` (各クラスごと)
 - Integration tests: `test_cli_integration.py`, `test_e2e_integration.py`
 - Error handling tests: `test_error_handling.py`
+- AI feature tests (v3.0.0): `test_ai_content_generator.py` (QualityValidator, PromptTemplateManager, AIContentGenerator)
 
 ### Test Style
 - Given-When-Then 構造でテストケースを記述
 - Mock を使用して外部依存を隔離（`@patch` デコレータ）
+- API呼び出しのモック化（v3.0.0）: `sys.modules['anthropic']` でモジュールレベルモック
 - Docstring に日本語でテスト目的を明記
 
 ---
 _Document patterns, not file trees. New files following patterns shouldn't require updates_
 
-_Updated: 2025-10-14 - Added audio-markdown-export structure patterns (v2.0.0)_
+_Updated: 2025-10-18 - Added AI content generation structure patterns (v3.0.0)_

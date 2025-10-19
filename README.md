@@ -19,6 +19,7 @@
 - **Apple Silicon最適化**: M1/M2/M3/M4チップで効率的に動作
 - **音声認識統合**: OpenAI Whisperで音声から自動的にテキストを抽出（日本語対応）
 - **Markdown記事生成**: スクリーンショットと音声解説を統合した記事を自動生成
+- **AI記事生成**: Claude APIによる高品質なアプリ紹介記事の自動生成（v2.1.0+）
 
 ## 必要な環境
 
@@ -73,7 +74,21 @@ pip install -r requirements.txt
 
 **注意**: 初回実行時、EasyOCRが自動的にOCRモデル（約500MB）をダウンロードします。インターネット接続が必要です。
 
-### 3. 動作確認
+### 4. AI記事生成機能の環境設定（オプション、v2.1.0+）
+
+AI記事生成機能を使用する場合は、Claude APIキーの設定が必要です。
+
+```bash
+# .env.exampleをコピー
+cp .env.example .env
+
+# .envファイルを編集してAPIキーを設定
+# ANTHROPIC_API_KEY=your_api_key_here
+```
+
+Claude APIキーは[Anthropic Console](https://console.anthropic.com/settings/keys)から取得できます。
+
+### 5. 動作確認
 
 ```bash
 # ヘルプを表示
@@ -104,6 +119,10 @@ python extract_screenshots.py --input app_demo.mp4
 | `--audio` | | なし | 音声ファイルパス（音声認識を有効化） |
 | `--markdown` | | なし | Markdown記事を生成する |
 | `--model-size` | | `base` | Whisperモデルサイズ（tiny, base, small, medium, large, turbo） |
+| `--ai-article` | | なし | AI（Claude API）による高品質記事を生成（v2.1.0+） |
+| `--app-name` | | 動画ファイル名 | アプリ名（AI記事生成用、v2.1.0+） |
+| `--ai-model` | | `claude-3-5-sonnet-20241022` | 使用するClaudeモデル（v2.1.0+） |
+| `--output-format` | | `markdown` | AI記事の出力形式（markdown/html、v2.1.0+） |
 
 ### 使用例
 
@@ -140,6 +159,22 @@ python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --markdown 
 
 # すべてのオプションを組み合わせ
 python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --markdown -c 15 -o ./article --model-size base
+```
+
+#### AI記事生成機能（v2.1.0+）
+
+```bash
+# 音声あり + AI記事生成（推奨）
+python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --ai-article --app-name "MyApp"
+
+# 音声なし + AI記事生成（画像のみから推測）
+python extract_screenshots.py -i app_demo.mp4 --ai-article --app-name "MyApp"
+
+# 既存Markdown + AI記事の両方を生成
+python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --markdown --ai-article
+
+# カスタムモデルとアプリ名を指定
+python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --ai-article --app-name "素晴らしいアプリ" --ai-model claude-sonnet-4-20250514
 ```
 
 ## テストの実行
@@ -208,7 +243,9 @@ output/
 │   └── ...
 ├── metadata.json
 ├── transcript.json       # 音声認識結果（--audioオプション使用時）
-└── article.md           # 生成されたMarkdown記事（--markdownオプション使用時）
+├── article.md           # 生成されたMarkdown記事（--markdownオプション使用時）
+├── ai_article.md        # AI生成記事（--ai-articleオプション使用時、v2.1.0+）
+└── ai_metadata.json     # AI生成メタデータ（--ai-articleオプション使用時、v2.1.0+）
 ```
 
 ### ファイル命名規則
@@ -303,6 +340,110 @@ output/
 - H2見出し: タイムスタンプ（MM:SS形式）+ 音声テキストから抽出した短いタイトル
 - 画像リンク: `![Screenshot](相対パス)`形式
 - 説明文: 音声テキスト、または音声がない場合は"(説明文なし)"
+
+### AI生成記事（ai_article.md）とメタデータ（v2.1.0+）
+
+`--ai-article`オプション使用時に生成されます。
+
+#### AI生成記事の特徴
+
+- **マルチモーダル分析**: Claude APIがスクリーンショット画像と音声文字起こしを統合分析
+- **高品質な文章**: 単なる羅列ではなく、読者が「使ってみたい」と思えるストーリー性のある記事
+- **柔軟なカスタマイズ**: プロンプトテンプレートを編集することで記事の構成や文体を変更可能
+
+#### AI生成記事の例
+
+```markdown
+# MyAppの魅力的な機能紹介
+
+このアプリは、直感的なインターフェースと強力な機能を兼ね備えています。
+
+## 主要機能
+
+ログイン画面では、シンプルかつ洗練されたUIが特徴です。ユーザー名とパスワードの入力フィールドが明確に配置され、初めて使う方でも迷うことなく操作できます。
+
+![スクリーンショット1](screenshots/01_00-15_score87.png)
+
+セキュリティにも配慮されており、パスワードは自動的にマスクされます。
+
+## 便利な操作性
+
+メイン画面に移ると、豊富な機能が一目で分かるように整理されています...
+```
+
+#### AIメタデータ（ai_metadata.json）
+
+AI記事生成のメタデータを記録します。
+
+```json
+{
+  "model": "claude-3-5-sonnet-20241022",
+  "prompt_version": "1.0.0",
+  "generated_at": "2025-10-18T12:34:56Z",
+  "total_screenshots": 10,
+  "transcript_available": true,
+  "quality_valid": true,
+  "quality_warnings": [],
+  "quality_metrics": {
+    "char_count": 1250,
+    "h1_count": 1,
+    "h2_count": 4,
+    "image_count": 10,
+    "broken_links": []
+  },
+  "api_usage": {
+    "input_tokens": 15234,
+    "output_tokens": 1456,
+    "total_cost_usd": 0.068
+  }
+}
+```
+
+**フィールド説明:**
+- `model`: 使用したClaudeモデル名
+- `prompt_version`: プロンプトテンプレートのバージョン
+- `generated_at`: 記事生成日時（ISO 8601形式）
+- `total_screenshots`: 入力されたスクリーンショット枚数
+- `transcript_available`: 音声文字起こしデータの有無
+- `quality_valid`: 品質検証結果（true/false）
+- `quality_warnings`: 品質警告メッセージのリスト
+- `quality_metrics`: 品質メトリクス（文字数、見出し数、画像数など）
+- `api_usage`: Claude API使用統計（トークン数、コスト）
+
+#### プロンプトテンプレートのカスタマイズ
+
+AI記事の内容は`prompts/`ディレクトリのテンプレートファイルを編集することでカスタマイズできます。
+
+**音声あり用テンプレート** (`prompts/article_with_audio.txt`):
+```
+あなたは{app_name}の魅力を伝える技術ライターです。
+
+以下の{total_screenshots}枚のスクリーンショット画像を分析してください。
+各スクリーンショットには音声解説のテキストが付与されています。
+
+タスク:
+1. 各画像のUI特徴と機能を分析する
+2. 音声解説から開発者の意図やアプリの価値提案を抽出する
+3. 読者がワクワクする文章で、ストーリー性のある記事を構成する
+
+フォーマット: Markdown（H1タイトル、H2セクション、画像リンク）
+```
+
+**音声なし用テンプレート** (`prompts/article_without_audio.txt`):
+```
+あなたは{app_name}の魅力を伝える技術ライターです。
+
+以下の{total_screenshots}枚のスクリーンショット画像を分析してください。
+音声解説はありません。画像の視覚情報のみから、UIの特徴と機能を推測して記事を作成してください。
+
+...
+```
+
+**変数:**
+- `{app_name}`: アプリ名（`--app-name`オプションまたは動画ファイル名から自動設定）
+- `{total_screenshots}`: スクリーンショット枚数（自動設定）
+
+テンプレートを編集後、再度`--ai-article`オプションで実行すると、カスタマイズされたプロンプトで記事が生成されます。
 
 ## 処理アルゴリズム
 
@@ -476,6 +617,69 @@ python extract_screenshots.py -i video.mp4 --audio audio.mp3 --markdown --model-
 2. スクリーンショットの枚数を減らす（`-c`オプションで調整）
 3. 閾値を調整して画面遷移の検出感度を変更（`-t`オプション）
 
+### AI記事生成のトラブルシューティング（v2.1.0+）
+
+**エラー: `ANTHROPIC_API_KEY環境変数が設定されていません`**
+
+APIキーが未設定です。
+
+```bash
+# .envファイルを作成
+cp .env.example .env
+
+# エディタで.envを開いてAPIキーを設定
+# ANTHROPIC_API_KEY=your_api_key_here
+```
+
+または、環境変数として直接設定:
+
+```bash
+export ANTHROPIC_API_KEY="your_api_key_here"
+python extract_screenshots.py -i video.mp4 --ai-article
+```
+
+**エラー: `Claude API認証エラー`**
+
+APIキーが無効、または期限切れです。
+
+- [Anthropic Console](https://console.anthropic.com/settings/keys)でAPIキーを確認
+- 新しいAPIキーを生成して `.env` ファイルを更新
+
+**警告: `品質検証警告 - 文字数不足`**
+
+生成された記事が品質基準（500文字以上）を満たしていません。
+
+原因:
+- スクリーンショット枚数が少ない
+- 音声文字起こしデータが少ない
+
+対処法:
+1. スクリーンショット枚数を増やす（`-c`オプションで調整）
+2. 音声解説をより詳細に録音する
+3. プロンプトテンプレートをカスタマイズして詳細な記事を生成するよう指示
+
+**エラー: `レート制限超過`**
+
+Claude APIのレート制限に到達しました。
+
+対処法:
+1. 数分待ってから再実行
+2. Anthropicアカウントのプランを確認（Free/Pro/Enterprise）
+3. リトライは自動で行われます（最大3回）
+
+**プロンプトテンプレートが見つからない警告**
+
+`prompts/`ディレクトリまたはテンプレートファイルが存在しません。
+
+```bash
+# promptsディレクトリが存在することを確認
+ls prompts/
+
+# ファイルが存在しない場合はデフォルトテンプレートが使用されます（警告は無視可）
+```
+
+デフォルトテンプレートでも動作しますが、カスタマイズしたい場合は`prompts/`ディレクトリを作成してテンプレートファイルを配置してください。
+
 ## 音声・Markdown統合機能の詳細（v2.0.0+）
 
 ### 概要
@@ -541,6 +745,9 @@ python extract_screenshots.py -i video.mp4 --audio audio.mp3 --markdown --model-
 
 ### 音声・Markdown統合機能（v2.0.0+）
 - **openai-whisper**: 音声認識エンジン（日本語対応）
+
+### AI記事生成機能（v2.1.0+）
+- **anthropic**: Claude API公式Python SDK（マルチモーダルAI）
 
 ## ライセンス
 

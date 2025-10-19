@@ -11,6 +11,7 @@
 - **Image Processing**: Pillow, imagehash
 - **OCR**: EasyOCR (Japanese/English)
 - **Audio Recognition**: OpenAI Whisper (local execution)
+- **AI Content Generation**: Anthropic Claude API (multimodal)
 - **Platform**: macOS (Apple Silicon optimized)
 
 ## Key Libraries
@@ -19,6 +20,7 @@
 - **imagehash**: Perceptual Hashing (pHash) による画面遷移検出
 - **EasyOCR**: 日本語・英語OCRによるUI要素検出（CPU mode）
 - **openai-whisper**: 音声認識エンジン（日本語対応、ローカル実行）
+- **anthropic**: Claude API公式Python SDK（マルチモーダルAI記事生成）
 - **numpy**: 画像データの数値計算
 - **tqdm**: CLI進捗表示
 
@@ -116,7 +118,19 @@
 - 初回呼び出し時のみモデルをロード、以降は再利用
 - メモリ効率とパフォーマンスのバランスを最適化
 
+### Claude API Integration (v3.0.0)
+- Messages APIによるマルチモーダル記事生成（画像+テキスト統合分析）
+- base64エンコードで画像をcontent blocksに含める（最大20枚、3.75MB制限）
+- 環境変数: `ANTHROPIC_API_KEY`（セキュリティベストプラクティス）
+- エラーハンドリング: Rate Limit対応（指数バックオフリトライ）、認証エラー検出
+- プロンプト管理: 外部テンプレートファイル（`prompts/`ディレクトリ、`str.format()`で変数置換）
+
+### Quality Validation Pattern (v3.0.0)
+- 生成記事の構造検証（必須セクション、最小文字数、画像参照）
+- メタデータ記録: 品質スコア、トークン使用量、生成時間、検証結果
+- JSON出力: `ai_metadata.json`（監査ログとして活用）
+
 ---
 _Document standards and patterns, not every dependency_
 
-_Updated: 2025-10-14 - Added audio-markdown-export patterns (v2.0.0)_
+_Updated: 2025-10-18 - Added AI content generation patterns (v3.0.0)_

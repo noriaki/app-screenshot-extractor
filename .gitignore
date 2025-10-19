@@ -9,6 +9,9 @@ venv/
 ENV/
 env/
 
+# Environment variables
+.env
+
 # Output
 output/
 source/

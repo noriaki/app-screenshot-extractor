@@ -18,6 +18,10 @@ import imagehash
 from PIL import Image
 from tqdm import tqdm
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 # EasyOCRは初回実行時にモデルをダウンロードするため、遅延インポート
 easyocr_reader = None
 
@@ -975,6 +979,571 @@ class MarkdownGenerator:
         print("=" * 40)
 
 
+class QualityValidator:
+    """
+    生成記事の品質を自動検証するクラス
+    Task 5: 記事品質検証機能の実装
+    """
+
+    def __init__(self,
+                 min_chars: int = 500,
+                 require_h1: bool = True,
+                 require_h2: bool = True,
+                 require_images: bool = True) -> None:
+        """
+        Args:
+            min_chars: 最低文字数
+            require_h1: H1見出し必須フラグ
+            require_h2: H2見出し必須フラグ
+            require_images: 画像リンク必須フラグ
+        """
+        self.min_chars = min_chars
+        self.require_h1 = require_h1
+        self.require_h2 = require_h2
+        self.require_images = require_images
+
+    def validate_quality(self, content: str, screenshot_paths: List[Path]) -> Dict[str, any]:
+        """
+        Markdown記事の品質を検証
+
+        Args:
+            content: 検証対象のMarkdownテキスト
+            screenshot_paths: 参照すべき画像パスリスト
+
+        Returns:
+            {
+                "valid": bool,  # 全検証項目合格ならTrue
+                "warnings": List[str],  # 警告メッセージリスト
+                "metrics": {
+                    "char_count": int,
+                    "h1_count": int,
+                    "h2_count": int,
+                    "image_count": int,
+                    "broken_links": List[str]
+                }
+            }
+        """
+        warnings = []
+
+        # 文字数計測
+        char_count = len(content)
+
+        # 見出しカウント（改行で区切られたものと、ファイル先頭のものを考慮）
+        h1_count = content.count('\n# ')
+        if content.startswith('# '):
+            h1_count += 1
+
+        h2_count = content.count('\n## ')
+        if content.startswith('## '):
+            h2_count += 1
+
+        # 画像リンク抽出とカウント
+        import re
+        image_pattern = r'!\[.*?\]\((.*?)\)'
+        image_links = re.findall(image_pattern, content)
+        image_count = len(image_links)
+
+        # 画像リンク検証
+        broken_links = self.validate_image_links(content, screenshot_paths)
+
+        # 構造検証
+        structure_valid = self.validate_structure(content)
+
+        # 検証結果の判定
+        valid = True
+
+        # 文字数検証
+        if char_count < self.min_chars:
+            valid = False
+            warnings.append(f"文字数不足: {char_count}文字（最低{self.min_chars}文字必要）")
+
+        # 構造検証失敗時の警告
+        if not structure_valid:
+            valid = False
+            if self.require_h1 and h1_count == 0:
+                warnings.append("H1見出しが見つかりません")
+            if self.require_h2 and h2_count == 0:
+                warnings.append("H2見出しが見つかりません")
+
+        # 画像リンク検証
+        if self.require_images and image_count == 0:
+            valid = False
+            warnings.append("画像リンクが見つかりません")
+
+        if broken_links:
+            valid = False
+            warnings.append(f"壊れた画像リンク: {len(broken_links)}件")
+
+        return {
+            "valid": valid,
+            "warnings": warnings,
+            "metrics": {
+                "char_count": char_count,
+                "h1_count": h1_count,
+                "h2_count": h2_count,
+                "image_count": image_count,
+                "broken_links": broken_links
+            }
+        }
+
+    def validate_structure(self, content: str) -> bool:
+        """
+        Markdown構造の妥当性を検証（H1, H2, 画像リンク）
+
+        Args:
+            content: Markdownテキスト
+
+        Returns:
+            構造が有効ならTrue
+        """
+        # H1見出しチェック
+        if self.require_h1:
+            if '\n# ' not in content and not content.startswith('# '):
+                return False
+
+        # H2見出しチェック
+        if self.require_h2:
+            if '\n## ' not in content:
+                return False
+
+        return True
+
+    def validate_image_links(self, content: str, screenshot_paths: List[Path]) -> List[str]:
+        """
+        画像リンクの存在確認
+
+        Args:
+            content: Markdownテキスト
+            screenshot_paths: 実在する画像パス
+
+        Returns:
+            壊れたリンクのリスト（空なら全て有効）
+        """
+        import re
+
+        # Markdownの画像リンクを抽出
+        image_pattern = r'!\[.*?\]\((.*?)\)'
+        image_links = re.findall(image_pattern, content)
+
+        # 実在する画像ファイル名のセット作成
+        valid_filenames = set()
+        for path in screenshot_paths:
+            valid_filenames.add(path.name)
+            # 相対パス形式も追加（screenshots/ファイル名）
+            valid_filenames.add(f"screenshots/{path.name}")
+
+        # 壊れたリンクを検出
+        broken_links = []
+        for link in image_links:
+            # リンクからファイル名を抽出
+            link_basename = Path(link).name
+
+            # ファイル名または相対パスが実在するかチェック
+            if link not in valid_filenames and link_basename not in valid_filenames:
+                broken_links.append(link)
+
+        return broken_links
+
+
+class PromptTemplateManager:
+    """
+    プロンプトテンプレートを管理し、str.format()で変数置換を行う
+    Task 1: プロンプトテンプレート管理機能の実装
+    """
+
+    def __init__(self, template_dir: str = "prompts") -> None:
+        """
+        Args:
+            template_dir: テンプレートファイル格納ディレクトリ
+        """
+        self.template_dir = Path(template_dir)
+
+    def load_template(self, template_name: str) -> str:
+        """
+        外部ファイルからテンプレートを読み込み
+
+        Args:
+            template_name: テンプレートファイル名
+                - "article_with_audio.txt": 音声文字起こしがある場合
+                - "article_without_audio.txt": 音声文字起こしがない場合
+
+        Returns:
+            テンプレート文字列（プレーンテキスト、{変数名}形式）
+
+        Raises:
+            FileNotFoundError: ファイルが存在しない場合（警告ログ後デフォルト返却）
+        """
+        template_path = self.template_dir / template_name
+
+        try:
+            if template_path.exists():
+                with open(template_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+        except Exception as e:
+            print(f"WARN: テンプレートファイル読み込みエラー ({template_path}): {e}")
+
+        # ファイルが存在しないか読み込みエラーの場合はデフォルトを使用
+        print(f"INFO: デフォルトテンプレートを使用します (template={template_name})")
+        with_audio = "with_audio" in template_name
+        return self.get_default_template(with_audio=with_audio)
+
+    def render(self, template: str, variables: Dict[str, any]) -> str:
+        """
+        テンプレートに変数を適用してレンダリング（str.format()使用）
+
+        Args:
+            template: プレーンテキストテンプレート文字列
+            variables: 置換変数辞書
+                {
+                    "app_name": str,
+                    "total_screenshots": int,
+                    ...
+                }
+
+        Returns:
+            レンダリング済みプロンプトテキスト
+
+        Raises:
+            KeyError: 必須変数が欠落している場合
+        """
+        return template.format(**variables)
+
+    def get_default_template(self, with_audio: bool = True) -> str:
+        """
+        デフォルトプロンプトテンプレートを返却（フォールバック用）
+
+        Args:
+            with_audio: 音声文字起こしあり用のテンプレートを返すか
+
+        Returns:
+            デフォルトテンプレート文字列
+        """
+        if with_audio:
+            return """あなたは{app_name}の魅力を伝える技術ライターです。
+
+以下の{total_screenshots}枚のスクリーンショット画像を分析してください。
+各スクリーンショットには音声解説のテキストが付与されています。画像の視覚情報と音声解説を統合して、アプリの機能と価値提案を分析してください。
+
+## タスク
+1. 各画像のUI特徴と機能を分析する
+2. 音声解説から開発者の意図やアプリの価値提案を抽出する
+3. 読者がワクワクする文章で、ストーリー性のある記事を構成する
+
+## 記事構成
+- H1: 魅力的なタイトル（アプリ名を含む）
+- H2: 論理的なセクション区切り（導入 → 機能紹介 → まとめの流れ）
+- 各スクリーンショットに対してコンテキストに沿った説明文を生成
+- 技術仕様ではなくユーザー体験と利点に焦点を当てる
+
+## 出力形式
+Markdown形式で出力してください。画像リンクは `![説明](screenshots/ファイル名.png)` 形式で記述してください。
+"""
+        else:
+            return """あなたは{app_name}の魅力を伝える技術ライターです。
+
+以下の{total_screenshots}枚のスクリーンショット画像を分析してください。
+音声解説はありません。画像の視覚情報のみから、UIの特徴と機能を推測して記事を作成してください。
+
+## タスク
+1. 各画像のUI要素と機能を分析する
+2. 画像から機能の目的を推測する
+3. 読者がワクワクする文章で、ストーリー性のある記事を構成する
+
+## 記事構成
+- H1: 魅力的なタイトル（アプリ名を含む）
+- H2: 論理的なセクション区切り（導入 → 機能紹介 → まとめの流れ）
+- 各スクリーンショットに対してコンテキストに沿った説明文を生成
+- 技術仕様ではなくユーザー体験と利点に焦点を当てる
+
+## 出力形式
+Markdown形式で出力してください。画像リンクは `![説明](screenshots/ファイル名.png)` 形式で記述してください。
+"""
+
+
+class AIContentGenerator:
+    """
+    マルチモーダルAI（Claude API）を使用して高品質なアプリ紹介記事を生成するクラス
+    Task 4.1: Claude API呼び出し機能の実装
+    """
+
+    def __init__(self,
+                 output_dir: str,
+                 api_key: Optional[str] = None,
+                 model: str = "claude-3-5-sonnet-20241022",
+                 max_tokens: int = 4000) -> None:
+        """
+        Args:
+            output_dir: 出力ディレクトリパス
+            api_key: Claude APIキー（Noneの場合は環境変数から取得）
+            model: 使用するClaudeモデル名
+            max_tokens: 最大出力トークン数
+
+        Raises:
+            ValueError: APIキーが未設定の場合
+        """
+        self.output_dir = Path(output_dir)
+        self.model = model
+        self.max_tokens = max_tokens
+
+        # APIキーの取得と検証
+        if api_key:
+            # 明示的に渡されたAPIキーを使用
+            self.api_key = api_key
+        else:
+            # 環境変数から取得
+            self.api_key = os.environ.get('ANTHROPIC_API_KEY')
+            if not self.api_key:
+                raise ValueError(
+                    "ANTHROPIC_API_KEY environment variable is not set. "
+                    "Please set it or pass api_key parameter."
+                )
+
+        # Anthropicクライアントの初期化
+        try:
+            import anthropic
+            self.anthropic = anthropic
+            self.client = anthropic.Anthropic(api_key=self.api_key)
+        except ImportError:
+            raise ImportError(
+                "anthropic package is not installed. "
+                "Please install it with: pip install anthropic"
+            )
+
+    def call_api_with_retry(self,
+                           request_data: Dict,
+                           max_retries: int = 3) -> any:
+        """
+        シンプルなリトライ戦略でClaude APIを呼び出し
+        Task 4.2: エラーハンドリングとリトライ戦略の実装
+
+        Args:
+            request_data: APIリクエストパラメータ
+            max_retries: 最大リトライ回数（デフォルト: 3）
+
+        Returns:
+            Claude APIレスポンス
+
+        Raises:
+            anthropic.RateLimitError: レート制限超過（リトライ上限到達）
+            anthropic.AuthenticationError: 認証エラー（リトライ不可）
+            anthropic.APIError: その他のAPIエラー
+        """
+        for attempt in range(max_retries):
+            try:
+                response = self.client.messages.create(**request_data)
+                return response
+
+            except self.anthropic.RateLimitError as e:
+                # 429レート制限エラー: リトライ対象
+                if attempt == max_retries - 1:
+                    # 最大リトライ回数に到達
+                    print(f"ERROR: レート制限超過。最大リトライ回数（{max_retries}）に到達しました。")
+                    raise
+
+                # retry-afterヘッダーを優先、なければ3秒待機
+                retry_after = 3.0  # デフォルト
+                if hasattr(e, 'response') and hasattr(e.response, 'headers'):
+                    retry_after_header = e.response.headers.get('retry-after')
+                    if retry_after_header:
+                        retry_after = float(retry_after_header)
+
+                print(f"WARN: レート制限到達。{retry_after}秒後にリトライ（試行 {attempt + 1}/{max_retries}）")
+                time.sleep(retry_after)
+
+            except self.anthropic.ServiceUnavailableError as e:
+                # 529サーバー過負荷エラー: リトライ対象
+                if attempt == max_retries - 1:
+                    # 最大リトライ回数に到達
+                    print(f"ERROR: APIサーバー過負荷。最大リトライ回数（{max_retries}）に到達しました。")
+                    raise
+
+                print(f"WARN: APIサーバー過負荷。3秒後にリトライ（試行 {attempt + 1}/{max_retries}）")
+                time.sleep(3.0)
+
+            except self.anthropic.AuthenticationError as e:
+                # 401認証エラー: リトライ不可、即座にエラー終了
+                print(f"ERROR: Claude API認証エラー。ANTHROPIC_API_KEYを確認してください: {e}")
+                raise
+
+            except self.anthropic.APIError as e:
+                # その他のAPIエラー（4xx、5xx）: リトライ不可、詳細ログ出力
+                error_details = f"status_code={getattr(e, 'status_code', 'unknown')}, message={str(e)}"
+                print(f"ERROR: Claude APIエラー - {error_details}")
+                raise
+
+        # ここには到達しないはず（すべてのケースでreturnまたはraise）
+        raise RuntimeError("Unexpected error in call_api_with_retry")
+
+    def generate_article(self,
+                        synchronized_data: List[Dict],
+                        app_name: str = "アプリ",
+                        output_format: str = "markdown") -> Dict[str, any]:
+        """
+        スクリーンショット・メタデータ・音声文字起こしから高品質記事を生成
+        Task 7: AIContentGeneratorクラスの統合実装
+
+        Args:
+            synchronized_data: タイムスタンプ同期済みデータ
+                [{"screenshot": {...}, "transcript": {...}, "matched": bool}, ...]
+            app_name: アプリ名（プロンプトテンプレート変数）
+            output_format: 出力形式（"markdown" or "html"）
+
+        Returns:
+            {
+                "content": str,  # 生成された記事テキスト
+                "metadata": {
+                    "model": str,
+                    "prompt_version": str,
+                    "generated_at": str,
+                    "total_screenshots": int,
+                    "transcript_available": bool,
+                    "quality_score": float
+                }
+            }
+
+        Raises:
+            ValueError: 入力データが不正な場合
+            anthropic.APIError: API呼び出し失敗（リトライ後）
+        """
+        from datetime import datetime
+        import base64
+
+        # 入力データ検証
+        if not synchronized_data:
+            raise ValueError("synchronized_data is empty")
+
+        # スクリーンショット画像パスと音声文字起こしを抽出
+        screenshot_paths = []
+        transcript_available = False
+
+        for item in synchronized_data:
+            screenshot_info = item.get("screenshot")
+            if screenshot_info and "file_path" in screenshot_info:
+                screenshot_paths.append(Path(screenshot_info["file_path"]))
+
+            transcript_info = item.get("transcript")
+            if transcript_info and transcript_info.get("text"):
+                transcript_available = True
+
+        if not screenshot_paths:
+            raise ValueError("No valid screenshot paths found in synchronized_data")
+
+        # 画像をbase64エンコード
+        content_blocks = []
+        for img_path in screenshot_paths:
+            if not img_path.exists():
+                print(f"WARN: 画像ファイルが見つかりません: {img_path}")
+                continue
+
+            # 画像を読み込んでbase64エンコード
+            with open(img_path, 'rb') as f:
+                image_data = base64.b64encode(f.read()).decode('utf-8')
+
+            content_blocks.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": image_data
+                }
+            })
+
+        # プロンプトテンプレートを選択・レンダリング
+        prompt_manager = PromptTemplateManager()
+
+        if transcript_available:
+            template_name = "article_with_audio.txt"
+        else:
+            template_name = "article_without_audio.txt"
+
+        template = prompt_manager.load_template(template_name)
+        prompt_text = prompt_manager.render(template, {
+            "app_name": app_name,
+            "total_screenshots": len(screenshot_paths)
+        })
+
+        # テキストプロンプトブロックを追加
+        content_blocks.append({
+            "type": "text",
+            "text": prompt_text
+        })
+
+        # Claude APIリクエスト作成
+        request_data = {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": content_blocks
+                }
+            ]
+        }
+
+        # API呼び出し（リトライあり）
+        print(f"INFO: Claude APIに記事生成をリクエスト中... (model={self.model}, screenshots={len(screenshot_paths)})")
+        response = self.call_api_with_retry(request_data)
+
+        # 記事テキストを抽出
+        article_content = response.content[0].text
+
+        # 品質検証
+        validator = QualityValidator()
+        quality_result = validator.validate_quality(article_content, screenshot_paths)
+
+        # API使用統計の計算
+        input_tokens = response.usage.input_tokens
+        output_tokens = response.usage.output_tokens
+        # コスト計算: Input $3/MTok, Output $15/MTok (2025年現在の概算)
+        total_cost_usd = (input_tokens * 3 + output_tokens * 15) / 1_000_000
+
+        # メタデータ構築
+        metadata = {
+            "model": self.model,
+            "prompt_version": "1.0.0",
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "total_screenshots": len(screenshot_paths),
+            "transcript_available": transcript_available,
+            "quality_valid": quality_result["valid"],
+            "quality_warnings": quality_result["warnings"],
+            "quality_metrics": quality_result["metrics"],
+            "api_usage": {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_cost_usd": round(total_cost_usd, 6)
+            }
+        }
+
+        return {
+            "content": article_content,
+            "metadata": metadata
+        }
+
+    def save_article(self, content: str, metadata: Dict) -> Path:
+        """
+        生成記事とメタデータをファイルに保存
+        Task 6: 記事生成メタデータ管理機能の実装
+
+        Args:
+            content: 記事テキスト
+            metadata: 生成メタデータ
+
+        Returns:
+            保存先ファイルパス（ai_article.md）
+        """
+        # ai_article.mdとして保存
+        article_path = self.output_dir / "ai_article.md"
+        with open(article_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        # ai_metadata.jsonとして保存
+        metadata_path = self.output_dir / "ai_metadata.json"
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+        return article_path
+
+
 def create_argument_parser() -> argparse.ArgumentParser:
     """引数パーサーを作成（テスト可能にするため分離）"""
     parser = argparse.ArgumentParser(
@@ -1011,6 +1580,20 @@ def create_argument_parser() -> argparse.ArgumentParser:
                        choices=['tiny', 'base', 'small', 'medium', 'large', 'turbo'],
                        help='Whisperモデルサイズ（デフォルト: base）')
 
+    # NEW: AI記事生成オプション（Task 8）
+    parser.add_argument('--ai-article', action='store_true',
+                       help='AI（Claude API）による高品質記事を生成（任意）')
+    parser.add_argument('--app-name', type=str, default=None,
+                       help='アプリ名（任意、未指定時は動画ファイル名から推測）')
+    parser.add_argument('--ai-model', type=str,
+                       default='claude-3-5-sonnet-20241022',
+                       choices=['claude-3-5-sonnet-20241022', 'claude-sonnet-4-20250514'],
+                       help='使用するClaudeモデル（デフォルト: claude-3-5-sonnet-20241022）')
+    parser.add_argument('--output-format', type=str,
+                       default='markdown',
+                       choices=['markdown', 'html'],
+                       help='AI記事の出力形式（デフォルト: markdown）')
+
     return parser
 
 
@@ -1018,18 +1601,26 @@ def run_integration_flow(video_path: str,
                          output_dir: str,
                          audio_path: Optional[str],
                          markdown: bool,
+                         ai_article: bool,  # NEW (Task 8)
+                         app_name: Optional[str],  # NEW (Task 8)
+                         ai_model: str,  # NEW (Task 8)
+                         output_format: str,  # NEW (Task 8)
                          model_size: str,
                          threshold: int,
                          interval: float,
                          count: int) -> None:
     """
-    統合処理フローを実行（Task 4.2）
+    統合処理フローを実行（Task 4.2, Task 8）
 
     Args:
         video_path: 入力動画ファイルパス
         output_dir: 出力ディレクトリ
         audio_path: 音声ファイルパス（None可）
         markdown: Markdown生成フラグ
+        ai_article: AI記事生成フラグ（NEW - Task 8）
+        app_name: アプリ名（NEW - Task 8、未指定時は動画ファイル名から推測）
+        ai_model: Claude APIモデル名（NEW - Task 8）
+        output_format: 出力形式（NEW - Task 8）
         model_size: Whisperモデルサイズ
         threshold: 画面遷移検出の閾値
         interval: 最小時間間隔
@@ -1049,6 +1640,11 @@ def run_integration_flow(video_path: str,
     if len(metadata) == 0:
         print("\nError: No screenshots extracted")
         sys.exit(1)
+
+    # Add file_path to each metadata item for AI article generation
+    screenshots_dir = Path(output_dir) / "screenshots"
+    for m in metadata:
+        m["file_path"] = str(screenshots_dir / m["filename"])
 
     # 新機能: 音声処理（Task 4.2）
     transcript_data = None
@@ -1113,6 +1709,76 @@ def run_integration_flow(video_path: str,
 
         print(f"\nMarkdown article saved to {output_path}")
 
+    # NEW: AI記事生成（Task 8, 9）
+    if ai_article:
+        print("\n" + "=" * 60)
+        print("  AI Article Generation")
+        print("=" * 60)
+        print()
+
+        # 同期処理（markdown未実行の場合）
+        if not markdown:
+            if audio_path and transcript_data:
+                # 音声あり: タイムスタンプ同期
+                synchronizer = TimestampSynchronizer(tolerance=5.0)
+                synchronized = synchronizer.synchronize(metadata, transcript_data)
+            else:
+                # 音声なし: スクリーンショットのみ
+                synchronized = [
+                    {
+                        "screenshot": m,
+                        "transcript": None,
+                        "matched": False
+                    }
+                    for m in metadata
+                ]
+
+        # アプリ名を決定（Task 8）
+        if app_name:
+            final_app_name = app_name
+        else:
+            # 動画ファイル名から拡張子を除去してアプリ名として使用
+            final_app_name = Path(video_path).stem
+            if not final_app_name or final_app_name.startswith('.'):
+                # ファイル名が無効な場合はデフォルトを使用
+                final_app_name = "アプリ"
+                print(f"⚠️  Warning: 動画ファイル名からアプリ名を推測できませんでした。デフォルト値 '{final_app_name}' を使用します。")
+
+        # AI記事生成器の初期化
+        try:
+            ai_generator = AIContentGenerator(
+                output_dir=output_dir,
+                model=ai_model,
+                max_tokens=4000
+            )
+
+            # 記事生成
+            result = ai_generator.generate_article(
+                synchronized_data=synchronized,
+                app_name=final_app_name,
+                output_format=output_format
+            )
+
+            # 記事とメタデータの保存（Task 9）
+            ai_generator.save_article(result["content"], result["metadata"])
+
+            # 品質検証結果表示
+            if not result["metadata"].get("quality_valid", True):
+                print("⚠️  Warning: 生成記事が品質基準を満たしていない可能性があります")
+                for warning in result["metadata"].get("quality_warnings", []):
+                    print(f"  - {warning}")
+
+            print(f"\n✓ AI記事生成完了: {output_dir}/ai_article.md")
+            print(f"✓ メタデータ保存完了: {output_dir}/ai_metadata.json")
+
+        except ValueError as e:
+            print(f"\n✗ AI記事生成エラー: {e}")
+            print("ヒント: ANTHROPIC_API_KEY環境変数を設定してください")
+            # 既存機能は影響を受けない（フォールスルー）
+        except Exception as e:
+            print(f"\n✗ AI記事生成エラー: {e}")
+            # 既存機能は影響を受けない（フォールスルー）
+
 
 def main():
     """メイン関数"""
@@ -1126,12 +1792,16 @@ def main():
     print("=" * 60)
     print()
 
-    # 統合処理フローを実行（Task 4.2, 4.3）
+    # 統合処理フローを実行（Task 4.2, 4.3, Task 8）
     run_integration_flow(
         video_path=args.input,
         output_dir=args.output,
         audio_path=args.audio,
         markdown=args.markdown,
+        ai_article=args.ai_article,  # NEW (Task 8)
+        app_name=args.app_name,  # NEW (Task 8)
+        ai_model=args.ai_model,  # NEW (Task 8)
+        output_format=args.output_format,  # NEW (Task 8)
         model_size=args.model_size,
         threshold=args.threshold,
         interval=args.interval,
