@@ -121,7 +121,7 @@ python extract_screenshots.py --input app_demo.mp4
 | `--model-size` | | `base` | Whisperモデルサイズ（tiny, base, small, medium, large, turbo） |
 | `--ai-article` | | なし | AI（Claude API）による高品質記事を生成（v2.1.0+） |
 | `--app-name` | | 動画ファイル名 | アプリ名（AI記事生成用、v2.1.0+） |
-| `--ai-model` | | `claude-3-5-sonnet-20241022` | 使用するClaudeモデル（v2.1.0+） |
+| `--ai-model` | | `claude-sonnet-4-5-20250929` | 使用するClaudeモデル（v3.1.0+、haiku-4-5/sonnet-4-5/opus-4-1から選択） |
 | `--output-format` | | `markdown` | AI記事の出力形式（markdown/html、v2.1.0+） |
 
 ### 使用例
@@ -164,7 +164,7 @@ python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --markdown 
 #### AI記事生成機能（v2.1.0+）
 
 ```bash
-# 音声あり + AI記事生成（推奨）
+# 音声あり + AI記事生成（推奨、デフォルトでSonnet 4.5を使用）
 python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --ai-article --app-name "MyApp"
 
 # 音声なし + AI記事生成（画像のみから推測）
@@ -173,8 +173,15 @@ python extract_screenshots.py -i app_demo.mp4 --ai-article --app-name "MyApp"
 # 既存Markdown + AI記事の両方を生成
 python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --markdown --ai-article
 
-# カスタムモデルとアプリ名を指定
-python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --ai-article --app-name "素晴らしいアプリ" --ai-model claude-sonnet-4-20250514
+# モデル選択（v3.1.0+）
+# Haiku 4.5: 高速・安価（コスト重視）
+python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --ai-article --ai-model claude-haiku-4-5-20251001
+
+# Sonnet 4.5: 安定・中庸（デフォルト、推奨）
+python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --ai-article --ai-model claude-sonnet-4-5-20250929
+
+# Opus 4.1: 高精度・高価（品質優先）
+python extract_screenshots.py -i app_demo.mp4 --audio demo_audio.mp3 --ai-article --ai-model claude-opus-4-1-20250805
 ```
 
 ## テストの実行
@@ -198,10 +205,13 @@ python -m unittest discover -s . -p "test_*.py" -v
 | `test_audio_processor.py` | AudioProcessorクラスの単体テスト（音声ファイル検証、音声認識、保存機能） |
 | `test_timestamp_synchronizer.py` | TimestampSynchronizerクラスの単体テスト（最近傍検索、同期処理） |
 | `test_markdown_generator.py` | MarkdownGeneratorクラスの単体テスト（Markdown生成、フォーマット、保存） |
-| `test_cli_integration.py` | CLI統合テスト（オプション解析、統合フロー、後方互換性） |
+| `test_ai_content_generator.py` | AIContentGeneratorクラスの単体テスト（Claude API呼び出し、モデル選択、品質検証） |
+| `test_cli_integration.py` | CLI統合テスト（オプション解析、統合フロー、後方互換性、モデル選択） |
 | `test_e2e_integration.py` | エンドツーエンドテスト（音声あり/なし、エラーケース） |
 | `test_error_handling.py` | エラーハンドリングテスト（ファイル不在、フォーマット不正、ffmpeg不在） |
 | `test_performance.py` | パフォーマンステスト（処理時間、メモリ使用量、スケーラビリティ） |
+| `test_error_cases.py` | **手動テスト**: エラーケースの検証（非推奨モデル、無効なモデル名、ヘルプメッセージ） |
+| `test_manual_e2e.py` | **手動テスト**: 実際のClaude APIでのE2Eテスト（3つのモデルで記事生成） |
 
 ### 特定のテストファイルを実行
 
@@ -225,10 +235,46 @@ test_format_description_with_text (test_markdown_generator.TestMarkdownGenerator
 test_format_section_title_fallback (test_markdown_generator.TestMarkdownGenerator) ... ok
 ...
 ----------------------------------------------------------------------
-Ran 118 tests in 4.569s
+Ran 199 tests in 5.254s
 
-OK (skipped=1)
+OK (skipped=2)
 ```
+
+### 手動E2Eテストの実行
+
+AIモデルアップグレードの動作確認のため、手動E2Eテストスクリプトが用意されています。
+
+#### エラーケースのテスト
+
+```bash
+# 非推奨モデル・無効なモデル名のエラーメッセージを確認
+python test_error_cases.py
+```
+
+このテストは以下を検証します:
+- 非推奨モデル（`claude-3-5-sonnet-20241022`）指定時のエラーメッセージ
+- 無効なモデル名指定時のエラーメッセージ
+- ヘルプメッセージに各モデルの説明が含まれること
+
+#### 実際のClaude APIでのテスト
+
+**前提条件**:
+- `ANTHROPIC_API_KEY` 環境変数が設定されていること
+- サンプル動画ファイル（`sample_video/demo.mp4`）が存在すること
+
+```bash
+# 3つのモデル（Haiku、Sonnet、Opus）で実際にAI記事生成を実行
+python test_manual_e2e.py
+```
+
+このテストは以下を検証します:
+- Haiku 4.5モデルでのAI記事生成
+- Sonnet 4.5モデル（デフォルト）でのAI記事生成
+- Opus 4.1モデルでのAI記事生成
+- 各モデルで `ai_metadata.json` に正しいモデル名が記録されること
+- 品質メタデータが正常に記録されること
+
+**注意**: このテストは実際にClaude APIを呼び出すため、APIクレジットを消費します。
 
 ## 出力形式
 
@@ -377,7 +423,7 @@ AI記事生成のメタデータを記録します。
 
 ```json
 {
-  "model": "claude-3-5-sonnet-20241022",
+  "model": "claude-sonnet-4-5-20250929",
   "prompt_version": "1.0.0",
   "generated_at": "2025-10-18T12:34:56Z",
   "total_screenshots": 10,
@@ -444,6 +490,88 @@ AI記事の内容は`prompts/`ディレクトリのテンプレートファイ�
 - `{total_screenshots}`: スクリーンショット枚数（自動設定）
 
 テンプレートを編集後、再度`--ai-article`オプションで実行すると、カスタマイズされたプロンプトで記事が生成されます。
+
+### AIモデル選択ガイド（v3.1.0+）
+
+AI記事生成では、用途に応じて3つのClaudeモデルから選択できます。
+
+#### モデル比較表
+
+| モデル | 速度 | 品質 | コスト（入力/出力 per MTok） | 推奨用途 |
+|--------|------|------|------------------------------|----------|
+| **Haiku 4.5**<br/>`claude-haiku-4-5-20251001` | 最速 | 標準 | $1 / $5 | コスト重視、大量処理、プロトタイプ作成 |
+| **Sonnet 4.5**<br/>`claude-sonnet-4-5-20250929` | 中速 | 高品質 | $3 / $15 | バランス重視、ほとんどの用途（**デフォルト**） |
+| **Opus 4.1**<br/>`claude-opus-4-1-20250805` | 低速 | 最高品質 | $15 / $75 | 品質最優先、公式ドキュメント、マーケティング資料 |
+
+**価格例（10枚のスクリーンショットで記事生成した場合の概算）:**
+- **Haiku 4.5**: 約 $0.10 - $0.15 per 記事
+- **Sonnet 4.5**: 約 $0.30 - $0.50 per 記事（**デフォルト**）
+- **Opus 4.1**: 約 $1.50 - $2.50 per 記事
+
+#### モデル選択の判断基準
+
+**Haiku 4.5を選ぶべき場合:**
+- 大量の記事を一度に生成する必要がある
+- プロトタイプや下書きの段階
+- コストを最小限に抑えたい
+- 生成速度を重視する
+
+**Sonnet 4.5を選ぶべき場合（推奨）:**
+- ほとんどのユースケースで最適なバランス
+- 公開用の記事だが、予算も気にする
+- 品質とコストのトレードオフを重視
+- デフォルトで迷ったらこれを選択
+
+**Opus 4.1を選ぶべき場合:**
+- 公式ドキュメントやマーケティング資料など、最高品質が必要
+- 詳細で説得力のある文章が求められる
+- コストよりも品質を最優先する
+- 複雑なUI分析や専門的な記事が必要
+
+#### モデル移行ガイド（v3.0.0からv3.1.0へ）
+
+**背景:**
+- Claude 3.5 Sonnet (`claude-3-5-sonnet-20241022`) は2025年10月22日に廃止（Anthropic公式発表）
+- 新しいClaude 4.5ファミリーへの移行が推奨されています
+
+**自動移行:**
+
+`--ai-model`オプションを指定していない場合、自動的にSonnet 4.5を使用します。コマンドの変更は不要です。
+
+```bash
+# v3.0.0でもv3.1.0でも同じコマンド
+python extract_screenshots.py -i video.mp4 --ai-article
+# → v3.1.0では自動的にclaude-sonnet-4-5-20250929を使用
+```
+
+**手動移行（スクリプトやCI/CD）:**
+
+旧モデルを明示的に指定している場合は、以下のように更新してください。
+
+| 旧モデル（v3.0.0） | 推奨移行先 | 特性 |
+|-------------------|----------|------|
+| `claude-3-5-sonnet-20241022` | `claude-sonnet-4-5-20250929` | 同等の品質・コストバランス（**推奨**） |
+| `claude-3-5-sonnet-20241022` | `claude-haiku-4-5-20251001` | コスト削減（約1/3）、高速 |
+| `claude-3-5-sonnet-20241022` | `claude-opus-4-1-20250805` | 品質優先、高コスト（5倍） |
+
+```bash
+# 変更前（v3.0.0）
+python extract_screenshots.py -i video.mp4 --ai-article --ai-model claude-3-5-sonnet-20241022
+
+# 変更後（v3.1.0、推奨）
+python extract_screenshots.py -i video.mp4 --ai-article --ai-model claude-sonnet-4-5-20250929
+```
+
+**エラーメッセージ:**
+
+旧モデルを指定すると、以下のエラーが表示されます。
+
+```
+extract_screenshots.py: error: argument --ai-model: invalid choice: 'claude-3-5-sonnet-20241022'
+(choose from 'claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250929', 'claude-opus-4-1-20250805')
+```
+
+有効な3つのモデルから選択して再実行してください。
 
 ## 処理アルゴリズム
 
@@ -764,6 +892,14 @@ MIT License
 Claude Code assisted implementation
 
 ## 更新履歴
+
+### v3.1.0 (2025-10-19)
+- **AIモデルアップグレード**: Claude 3.5 Sonnet → Claude 4.5ファミリーへ移行
+- **3段階モデル選択**: Haiku 4.5（高速・安価）、Sonnet 4.5（安定・中庸）、Opus 4.1（高精度・高価）
+- **デフォルトモデル変更**: `claude-sonnet-4-5-20250929`（Anthropic推奨移行先）
+- **モデル可視性向上**: 使用モデル名を標準出力とメタデータに記録
+- **自動移行**: 既存ユーザーは次回実行時に自動的にSonnet 4.5を使用
+- **詳細な移行ガイド**: CHANGELOG.mdとREADME.mdに移行手順を記載
 
 ### v2.0.0 (2025-10-14)
 - **音声認識機能の追加**: OpenAI Whisperによる音声テキスト変換

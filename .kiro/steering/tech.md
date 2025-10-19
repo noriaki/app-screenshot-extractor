@@ -130,7 +130,13 @@
 - メタデータ記録: 品質スコア、トークン使用量、生成時間、検証結果
 - JSON出力: `ai_metadata.json`（監査ログとして活用）
 
+### AI Model Selection (v3.1.0)
+- 3段階モデル選択: Haiku 4.5（高速・安価）、Sonnet 4.5（安定・中庸、デフォルト）、Opus 4.1（高精度・高価）
+- デフォルトモデル更新: `claude-3-5-sonnet-20241022` (Deprecated) → `claude-sonnet-4-5-20250929`
+- CLI引数: `--ai-model` で3つのモデルから選択可能
+- 用途別選択: コスト重視（Haiku）、バランス重視（Sonnet、推奨）、品質優先（Opus）
+
 ---
 _Document standards and patterns, not every dependency_
 
-_Updated: 2025-10-18 - Added AI content generation patterns (v3.0.0)_
+_Updated: 2025-10-19 - Added AI Model Selection pattern (v3.1.0)_

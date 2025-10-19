@@ -1269,13 +1269,13 @@ class AIContentGenerator:
     def __init__(self,
                  output_dir: str,
                  api_key: Optional[str] = None,
-                 model: str = "claude-3-5-sonnet-20241022",
+                 model: str = "claude-sonnet-4-5-20250929",
                  max_tokens: int = 4000) -> None:
         """
         Args:
             output_dir: 出力ディレクトリパス
             api_key: Claude APIキー（Noneの場合は環境変数から取得）
-            model: 使用するClaudeモデル名
+            model: 使用するClaudeモデル名（デフォルト: claude-sonnet-4-5-20250929）
             max_tokens: 最大出力トークン数
 
         Raises:
@@ -1456,10 +1456,14 @@ class AIContentGenerator:
         else:
             template_name = "article_without_audio.txt"
 
+        # ファイル名リストを生成（箇条書き形式）
+        screenshot_filenames = "\n".join([f"- {path.name}" for path in screenshot_paths])
+
         template = prompt_manager.load_template(template_name)
         prompt_text = prompt_manager.render(template, {
             "app_name": app_name,
-            "total_screenshots": len(screenshot_paths)
+            "total_screenshots": len(screenshot_paths),
+            "screenshot_filenames": screenshot_filenames
         })
 
         # テキストプロンプトブロックを追加
@@ -1586,9 +1590,14 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument('--app-name', type=str, default=None,
                        help='アプリ名（任意、未指定時は動画ファイル名から推測）')
     parser.add_argument('--ai-model', type=str,
-                       default='claude-3-5-sonnet-20241022',
-                       choices=['claude-3-5-sonnet-20241022', 'claude-sonnet-4-20250514'],
-                       help='使用するClaudeモデル（デフォルト: claude-3-5-sonnet-20241022）')
+                       default='claude-sonnet-4-5-20250929',
+                       choices=['claude-haiku-4-5-20251001',
+                                'claude-sonnet-4-5-20250929',
+                                'claude-opus-4-1-20250805'],
+                       help='使用するClaudeモデル（デフォルト: claude-sonnet-4-5-20250929）\n'
+                            '  - haiku-4-5: 高速・安価（$1/$5 per MTok）\n'
+                            '  - sonnet-4-5: 安定・中庸（$3/$15 per MTok、推奨）\n'
+                            '  - opus-4-1: 高精度・高価（$15/$75 per MTok）')
     parser.add_argument('--output-format', type=str,
                        default='markdown',
                        choices=['markdown', 'html'],
