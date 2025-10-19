@@ -78,7 +78,7 @@
   - 環境変数認証（ANTHROPIC_API_KEY）が引き続き動作することを確認
   - _Requirements: 4.2, 4.3, 4.4_
 
-- [ ] 9. CHANGELOG.mdの更新
+- [x] 9. CHANGELOG.mdの更新
   - モデルアップグレードの変更内容を記録
   - 廃止されたモデルから新モデルへの移行を明記
   - デフォルトモデルの変更（claude-3-5-sonnet-20241022 → claude-sonnet-4-5-20250929）を記載
@@ -86,7 +86,7 @@
   - バージョン番号と日付を適切に設定
   - _Requirements: All (変更履歴の記録)_
 
-- [ ] 10. README.mdの更新
+- [x] 10. README.mdの更新
   - 3つのモデルカテゴリ（Haiku、Sonnet、Opus）の説明を追加
   - 各モデルを使用するCLIコマンド例を提供
   - コスト・速度・品質の比較表を作成
